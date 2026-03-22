@@ -150,10 +150,10 @@ class Graph(BaseModel):
         description="List of edges connecting nodes in the workflow"
     )
     
-    """Pydantic configuration for Graph model."""
+    # Pydantic configuration for Graph model.
     model_config = {
-    "str_strip_whitespace": True
-}
+        "str_strip_whitespace": True
+    }
     
     @model_validator(mode="after")
     def validate_graph_consistency(self) -> "Graph":
