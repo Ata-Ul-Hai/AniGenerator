@@ -18,9 +18,7 @@ from app.models import Graph
 from app.validator import build_adjacency, _find_bfs_merge_node
 
 
-# ---------------------------------------------------------------------------
 # SceneStep
-# ---------------------------------------------------------------------------
 
 class SceneStep(BaseModel):
     """A single step in the animation sequence."""
@@ -31,9 +29,7 @@ class SceneStep(BaseModel):
     branch: Optional[Literal["yes", "no"]] = None
 
 
-# ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
 
 NodeTypeMap = dict[str, Literal["start", "process", "decision", "end"]]
 
@@ -117,9 +113,7 @@ def _walk(
     return steps
 
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 def transform_graph(graph: Graph) -> list[SceneStep]:
     """Transform a validated Graph into an ordered list of SceneStep objects.
