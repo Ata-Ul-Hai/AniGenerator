@@ -127,13 +127,12 @@ class JobStatusResponse(BaseModel):
 
 def _backend_root() -> Path:
     """Return the backend project directory for relative path resolution."""
-
+    # During 'uvicorn backend.main:app' from /app root, __file__ is /app/backend/main.py
     return Path(__file__).resolve().parent
-
 
 def _renderer_root() -> Path:
     """Return the renderer project directory."""
-
+    # Correct for both local dev and Docker context (WORKDIR /app)
     return _backend_root().parent / "renderer"
 
 
