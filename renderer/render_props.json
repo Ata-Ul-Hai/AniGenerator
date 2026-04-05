@@ -1,0 +1,20 @@
+{
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "scenes": [
+    {
+      "scene_id": 1,
+      "narration": "Think of Bitcoin transactions like writing a personal check to your friend. You sign the check to make it official. When your friend receives it, they'll look at your signature to verify it's really from you before accepting the payment.",
+      "visual_keyword": "document",
+      "fallback_keyword": "signature_pen",
+      "metaphor_hint": "Personal checks are signed and then verified by the recipient.",
+      "audio_path": "public/runs/000314d71a434ad58bd2248f745410e3/audio/scene_1.mp3",
+      "svg_path": "public/runs/000314d71a434ad58bd2248f745410e3/svgs/document.svg",
+      "audio_duration_ms": 13848,
+      "draw_start_ms": 0,
+      "draw_duration_ms": 2000,
+      "hold_ms": 11848
+    }
+  ]
+}

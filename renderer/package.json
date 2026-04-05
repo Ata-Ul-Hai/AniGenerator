@@ -1,0 +1,23 @@
+{
+  "name": "document-to-video-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "remotion render src/Root.tsx Whiteboard --props=./render_props.json out.mp4",
+    "preview": "remotion studio src/Root.tsx",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.306"
+  },
+  "devDependencies": {
+    "@remotion/cli": "^4.0.306",
+    "@types/node": "^22.15.3",
+    "@types/react": "^18.3.9",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.7.3"
+  }
+}

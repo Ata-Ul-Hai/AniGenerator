@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <g fill="none" stroke="#102b54" stroke-linecap="round" stroke-linejoin="round" stroke-width="8">
+    <rect x="26" y="26" width="204" height="204" rx="22" />
+    <path d="M53 76 C 92 44, 164 44, 87 84" />
+    <path d="M34 132 C 86 104, 170 104, 222 136" />
+    <path d="M121 184 C 98 210, 162 210, 208 174" />
+  </g>
+  <text x="128" y="124" text-anchor="middle" font-size="16" fill="#7d2d19" font-family="Verdana, sans-serif">concept_icon_064</text>
+</svg>
