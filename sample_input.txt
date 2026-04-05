@@ -1,0 +1,9 @@
+1.1. What is Bitcoin?
+Bitcoin is a digital cash system. It allows for people to move bitcoins, the currency unit of Bitcoin, between each other without using a bank or any other trusted third party. It resembles traditional bank notes and coins, but it’s purely digital and used over the internet. The Bitcoin currency isn’t tied to any specific fiat currency like the US dollar or the Chinese renminbi; it has free-floating exchange rates against most fiat currencies. You can buy and sell bitcoins for fiat currencies online using one of several exchanges, such as kraken.com, bitstamp.net, or localbitcoins.com.
+
+Bitcoin or bitcoin?
+The system is named Bitcoin with a capital B. The currency unit is called a bitcoin with a lowercase b. Commonly used symbols for bitcoins are BTC, BTC, and XBT. We’ll mostly use BTC in this book.
+
+No government or company controls Bitcoin. Instead, thousands of computers around the globe—the Bitcoin network, shown in Figure 1—collectively keep the system working 24/7. You don’t need to register or sign up anywhere to use Bitcoin, you just need internet access and a computer program, like a mobile app, to use it.
+
+Anyone can use or participate in the Bitcoin network without special permission from a bank or similar institution. Thanks to Bitcoin’s permissionless nature, a lot of Bitcoin-related technology has emerged over the years.
