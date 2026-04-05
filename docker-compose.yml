@@ -1,0 +1,51 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      APP_ENV: ${APP_ENV:-production}
+      AUTO_CREATE_TABLES: ${AUTO_CREATE_TABLES:-false}
+      DATABASE_SSL_MODE: ${DATABASE_SSL_MODE:-prefer}
+      ENABLE_AUTH: ${ENABLE_AUTH:-true}
+      AUTH_USERNAME: ${AUTH_USERNAME:?AUTH_USERNAME is required}
+      AUTH_PASSWORD: ${AUTH_PASSWORD:?AUTH_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+    command: ["sh", "-c", "python /app/scripts/migrate_db.py && uvicorn backend.main:app --app-dir /app --host 0.0.0.0 --port 8000"]
+    volumes:
+      - renderer_runs:/app/renderer/runs
+      - renderer_public_runs:/app/renderer/public/runs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
+      interval: 20s
+      timeout: 5s
+      retries: 4
+    restart: unless-stopped
+    init: true
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-anigen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-anigendb}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  renderer_runs:
+  renderer_public_runs:
