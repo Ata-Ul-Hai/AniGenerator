@@ -44,12 +44,15 @@ app = FastAPI(title="Document to Video Pipeline API", version="2.0.0")
 
 _settings = get_settings()
 
+_allowed_origins = [
+    origin.strip() for origin in _settings.allowed_origins.split(",") if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        origin.strip() for origin in _settings.allowed_origins.split(",") if origin.strip()
-    ],
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    # Standard CORS security: Credentials cannot be used with a wildcard origin '*'
+    allow_credentials="*" not in _allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
