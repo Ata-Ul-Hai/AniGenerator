@@ -41,6 +41,14 @@ env/
 *.sqlite
 *.sqlite3
 
+# Generated Artifacts & Output
+runs/
+*.mp4
+*.mp3
+*.wav
+*.m4a
+render_props.json
+
 # OS
 .DS_Store
 Thumbs.db
