@@ -43,6 +43,7 @@ env/
 
 # Generated Artifacts & Output
 runs/
+test_output/
 *.mp4
 *.mp3
 *.wav
