@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="change_me", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=60, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
+    allowed_origins: str = Field(default="*", alias="ALLOWED_ORIGINS")
 
     # ── NEW ──────────────────────────────────────────────────────────────────
     # SQLite for local dev (no setup needed — file created automatically)

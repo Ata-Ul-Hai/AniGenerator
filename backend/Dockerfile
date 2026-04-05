@@ -30,4 +30,5 @@ RUN useradd --system --uid 10001 --create-home appuser \
 
 USER appuser
 
-CMD ["uvicorn", "backend.main:app", "--app-dir", "/app", "--host", "0.0.0.0", "--port", "8000"]
+# Use the PORT environment variable if provided (default to 8080 for Cloud Run)
+CMD ["sh", "-c", "python /app/scripts/migrate_db.py && uvicorn backend.main:app --app-dir /app --host 0.0.0.0 --port ${PORT:-8080}"]

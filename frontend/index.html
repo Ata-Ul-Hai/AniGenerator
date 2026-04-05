@@ -277,11 +277,6 @@
             <input id="maxScenes" type="number" min="1" max="40" value="12" />
           </div>
 
-          <div class="field">
-            <label for="authToken">Bearer token (optional)</label>
-            <input id="authToken" type="password" placeholder="Paste token from /auth/token" />
-          </div>
-
           <label class="tog">
             <input id="renderVideo" type="checkbox" checked />
             Render MP4 after generation
@@ -326,6 +321,11 @@
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script>
+      // When deploying, change this to your Google Cloud Run URL.
+      // Example: window.API_BASE_URL = "https://anigen-backend-xyz.a.run.app";
+      window.API_BASE_URL = "";
+    </script>
+    <script src="/app.js"></script>
   </body>
 </html>

@@ -2,15 +2,17 @@ const state = {
   extractedText: "",
   pollTimer: null,
   activeJobId: null,
-  authToken: localStorage.getItem("anigen.authToken") || "",
 };
+
+// For hybrid deployment: Set this to your Cloud Run URL (e.g. https://anigen-backend-xyz.a.run.app)
+// If empty, it defaults to the same domain (useful for local dev).
+const API_BASE_URL = window.location.hostname === "localhost" ? "" : (window.API_BASE_URL || "");
 
 const POLL_INTERVAL_MS = 900;
 
 const el = {
   docFile: document.getElementById("docFile"),
   maxScenes: document.getElementById("maxScenes"),
-  authToken: document.getElementById("authToken"),
   renderVideo: document.getElementById("renderVideo"),
   uploadBtn: document.getElementById("uploadBtn"),
   generateBtn: document.getElementById("generateBtn"),
@@ -34,23 +36,6 @@ const stopPolling = () => {
   }
 };
 
-const getAuthHeaderValue = () => {
-  const rawToken = (el.authToken?.value || state.authToken || "").trim();
-  if (!rawToken) {
-    return "";
-  }
-  return rawToken.startsWith("Bearer ") ? rawToken : `Bearer ${rawToken}`;
-};
-
-const buildAuthHeaders = (baseHeaders = {}) => {
-  const headers = { ...baseHeaders };
-  const authHeader = getAuthHeaderValue();
-  if (authHeader) {
-    headers.Authorization = authHeader;
-  }
-  return headers;
-};
-
 const requireFile = () => {
   const file = el.docFile.files?.[0];
   if (!file) {
@@ -66,9 +51,8 @@ const uploadDocument = async () => {
   const form = new FormData();
   form.append("file", file);
 
-  const response = await fetch("/upload", {
+  const response = await fetch(`${API_BASE_URL}/upload`, {
     method: "POST",
-    headers: buildAuthHeaders(),
     body: form,
   });
 
@@ -99,9 +83,7 @@ const pollJob = (jobId) => {
 
     pending = true;
     try {
-      const response = await fetch(`/jobs/${jobId}`, {
-        headers: buildAuthHeaders(),
-      });
+      const response = await fetch(`${API_BASE_URL}/jobs/${jobId}`);
       if (!response.ok) {
         throw new Error(`Failed to fetch job status: ${response.status}`);
       }
@@ -118,7 +100,7 @@ const pollJob = (jobId) => {
         el.sceneCount.textContent = String(scenes.length);
 
         if (job.video_path) {
-          const nextSrc = `/${job.video_path}?v=${Date.now()}`;
+          const nextSrc = `${API_BASE_URL}/${job.video_path}?v=${Date.now()}`;
           el.videoPreview.pause();
           el.videoPreview.removeAttribute("src");
           el.videoPreview.src = nextSrc;
@@ -160,11 +142,11 @@ const generateAsync = async () => {
     render_video: Boolean(el.renderVideo.checked),
   };
 
-  const response = await fetch("/generate/async", {
+  const response = await fetch(`${API_BASE_URL}/generate/async`, {
     method: "POST",
-    headers: buildAuthHeaders({
+    headers: {
       "Content-Type": "application/json",
-    }),
+    },
     body: JSON.stringify(payload),
   });
 
@@ -193,11 +175,3 @@ el.generateBtn.addEventListener("click", async () => {
     setStatus(error.message || "Generation failed.", "err");
   }
 });
-
-if (el.authToken) {
-  el.authToken.value = state.authToken;
-  el.authToken.addEventListener("change", () => {
-    state.authToken = (el.authToken.value || "").trim();
-    localStorage.setItem("anigen.authToken", state.authToken);
-  });
-}

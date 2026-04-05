@@ -16,6 +16,7 @@ from time import perf_counter
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -42,14 +43,16 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Document to Video Pipeline API", version="2.0.0")
 
 _settings = get_settings()
-_JOB_EXECUTOR = ThreadPoolExecutor(
-    max_workers=_settings.job_worker_count,
-    thread_name_prefix="pipeline-job",
-)
-_INFLIGHT_JOB_LIMITER = BoundedSemaphore(value=_settings.job_queue_capacity)
-_RENDER_LIMITER = BoundedSemaphore(value=_settings.max_concurrent_renders)
 
-app.include_router(auth_router)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip() for origin in _settings.allowed_origins.split(",") if origin.strip()
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # At startup — creates anigen.db automatically
