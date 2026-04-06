@@ -21,10 +21,11 @@ steps:
       '--region', 'europe-west1',
       '--platform', 'managed',
       '--allow-unauthenticated',
-      '--timeout', '300',
+      '--timeout', '3600',
       '--max-instances', '1',
       '--memory', '2Gi',
-      '--cpu', '1'
+      '--cpu', '1',
+      '--no-cpu-throttling'
     ]
 
 options:
