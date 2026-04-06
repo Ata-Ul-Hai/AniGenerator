@@ -476,6 +476,7 @@ def _run_remotion_render(job_id: str, output_rel_path: str, props_path: Path) ->
         "Whiteboard",
         f"--props={props_arg}",
         output_rel_path,
+        '--chromium-flags="--no-sandbox"',
     ]
     with _timed_stage(job_id, "remotion_render"):
         subprocess.run(command, cwd=renderer_dir, check=True)

@@ -22,7 +22,9 @@ steps:
       '--platform', 'managed',
       '--allow-unauthenticated',
       '--timeout', '300',
-      '--max-instances', '1'
+      '--max-instances', '1',
+      '--memory', '2Gi',
+      '--cpu', '1'
     ]
 
 options:
