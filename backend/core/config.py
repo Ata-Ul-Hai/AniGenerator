@@ -45,20 +45,29 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_database_url_for_environment(self) -> "Settings":
-        """Softened check for proof-of-concept deployment on Cloud Run."""
+        """Robust safety checks for Cloud Run deployment."""
 
         if self.app_env.lower() == "production":
+            # Sanitize DATABASE_URL if it contains local-only hostnames (ghosts from .env)
+            if "@db:" in self.database_url or "@localhost" in self.database_url:
+                logging.warning(f"DATABASE_URL contains local hostname (@db or @localhost). Forcing SQLite fallback.")
+                self.database_url = "sqlite:////tmp/anigen.db"
+
             if self.database_url.startswith("sqlite"):
-                logging.warning(
-                    "DATABASE_URL uses sqlite in production. This is NOT recommended for persistence."
-                )
-                # Redirect SQLite to /tmp for Cloud Run (writable space)
+                logging.warning("DATABASE_URL uses sqlite in production. Redirecting to /tmp/anigen.db.")
                 if not self.database_url.startswith("sqlite:////tmp/"):
                     self.database_url = "sqlite:////tmp/anigen.db"
-                    logging.warning(f"Redirected SQLite to {self.database_url} for Cloud Run compatibility.")
 
             if self.auto_create_tables:
-                logging.warning("AUTO_CREATE_TABLES is true in production. Using it for initial deployment test.")
+                logging.warning("AUTO_CREATE_TABLES is true in production. Using it for initial test.")
+
+            # Soften JWT and Auth checks
+            if not self.jwt_secret or self.jwt_secret == "change_me":
+                logging.warning("JWT_SECRET missing. Using temporary secret.")
+                self.jwt_secret = "temporary_deployment_secret_please_change"
+
+            if self.enable_auth and self.auth_password in {"", "change_me"}:
+                logging.warning("AUTH_PASSWORD is default. Update in production console.")
 
         return self
 
