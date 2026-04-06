@@ -57,6 +57,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ── ENGINE INITIALIZATION ──────────────────────────────────────────────────
+# Background executors & concurrency limiters
+from concurrent.futures import ThreadPoolExecutor
+from threading import BoundedSemaphore
+
+_JOB_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_settings.job_worker_count,
+    thread_name_prefix="job",
+)
+_RENDER_LIMITER = BoundedSemaphore(value=_settings.max_concurrent_renders)
+_INFLIGHT_JOB_LIMITER = BoundedSemaphore(value=_settings.job_queue_capacity)
+
 
 # At startup — creates anigen.db automatically
 @app.on_event("startup")

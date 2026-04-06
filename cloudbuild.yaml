@@ -12,7 +12,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/anigenerator-git:$COMMIT_SHA']
 
-  # Step 3: Deploy to Cloud Run
+  # Step 3: Deploy to Cloud Run with increased timeout and explicit PORT
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args: [
@@ -20,7 +20,9 @@ steps:
       '--image', 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/anigenerator-git:$COMMIT_SHA',
       '--region', 'europe-west1',
       '--platform', 'managed',
-      '--allow-unauthenticated'
+      '--allow-unauthenticated',
+      '--set-env-vars', 'PORT=8080',
+      '--timeout', '300'
     ]
 
 options:
