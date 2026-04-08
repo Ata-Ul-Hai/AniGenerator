@@ -25,7 +25,8 @@ steps:
       '--max-instances', '1',
       '--memory', '2Gi',
       '--cpu', '1',
-      '--no-cpu-throttling'
+      '--no-cpu-throttling',
+      '--set-env-vars', 'APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
     ]
 
 options:
