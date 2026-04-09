@@ -34,6 +34,13 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const headers = { Authorization: `Bearer ${token}` };
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   const pollJob = (jobId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
@@ -179,7 +186,7 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
                 <div className="p-2 bg-accent-purple/10 rounded-lg border border-accent-purple/20">
                   <Settings size={18} className="text-accent-purple" />
                 </div>
-                <h2 className="text-lg font-bold tracking-tight">2. Paramters</h2>
+                <h2 className="text-lg font-bold tracking-tight">2. Parameters</h2>
               </div>
 
               <div className="space-y-4">

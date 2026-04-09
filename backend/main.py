@@ -259,7 +259,7 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
         if "audio_path" in scene and isinstance(scene["audio_path"], str):
             path = scene["audio_path"]
             # Remove any known prefixes and leading slashes to make it relative to 'public'
-            for prefix in ["/artifacts", "/local-artifacts", "artifacts", "local-artifacts"]:
+            for prefix in ["/artifacts/", "/local-artifacts/", "artifacts/", "local-artifacts/"]:
                 if path.startswith(prefix):
                     path = path[len(prefix):]
             scene["audio_path"] = path.lstrip("/")

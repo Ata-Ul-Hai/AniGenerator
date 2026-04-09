@@ -36,12 +36,18 @@ class LocalStorageProvider(StorageProvider):
         logger.info("LocalStorageProvider initialized at %s", base_dir)
 
     def upload_file(self, local_path: str | Path, remote_rel_path: str) -> str:
-        """Copy file to the local public directory."""
-        dest_path = self.base_dir / remote_rel_path.lstrip("/")
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        """Copy file to the local public directory with traversal protection."""
+        # Sanitize relative path by removing leading slashes and traversal segments
+        safe_rel_path = remote_rel_path.lstrip("/").replace("..", "")
+        dest_path = (self.base_dir / safe_rel_path).resolve()
         
+        # Ensure the resolved destination is still within the base directory
+        if not str(dest_path).startswith(str(self.base_dir.resolve())):
+            raise ValueError(f"Security Warning: Attempted path traversal for {remote_rel_path}")
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(local_path, dest_path)
-        logger.info("Local Storage: %s -> %s", local_path, dest_path)
+        logger.info("Local Storage (Secured): %s -> %s", local_path, dest_path)
         
         return self.get_url(remote_rel_path)
 
