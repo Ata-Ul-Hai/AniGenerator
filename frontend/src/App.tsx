@@ -1,40 +1,29 @@
-import { useState, useEffect } from 'react';
-import './App.css';
-import LandingPage from './components/LandingPage.tsx';
-import Dashboard from './components/Dashboard.tsx';
-import AdminLogin from './components/AdminLogin.tsx';
+import { useState, useEffect } from "react";
+import LandingPage from "./components/LandingPage.tsx";
+import AdminLogin from "./components/AdminLogin.tsx";
+import Dashboard from "./components/Dashboard.tsx";
 
 function App() {
-  const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
-  const [token, setToken] = useState<string | null>(localStorage.getItem('admin_token'));
+  const [view, setView] = useState<"landing" | "login" | "dashboard">("landing");
+  const [token, setToken] = useState<string | null>(localStorage.getItem("admin_token"));
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem('admin_token', token);
-      if (view === 'login') setView('dashboard');
+      localStorage.setItem("admin_token", token);
     } else {
-      localStorage.removeItem('admin_token');
+      localStorage.removeItem("admin_token");
     }
-  }, [token, view]);
+  }, [token]);
 
-  const handleLogout = () => {
-    setToken(null);
-    setView('landing');
-  };
+  const handleLogin = (t: string) => { setToken(t); setView("dashboard"); };
+  const handleLogout = () => { setToken(null); setView("landing"); };
+  const handleGetStarted = () => setView(token ? "dashboard" : "login");
 
   return (
-    <div className="app-container">
-      {view === 'landing' && (
-        <LandingPage onGetStarted={() => setView(token ? 'dashboard' : 'login')} />
-      )}
-      
-      {view === 'login' && (
-        <AdminLogin onLogin={setToken} onBack={() => setView('landing')} />
-      )}
-      
-      {view === 'dashboard' && token && (
-        <Dashboard token={token} onLogout={handleLogout} />
-      )}
+    <div className="dark">
+      {view === "landing" && <LandingPage onGetStarted={handleGetStarted} />}
+      {view === "login" && <AdminLogin onLogin={handleLogin} onBack={() => setView("landing")} />}
+      {view === "dashboard" && token && <Dashboard token={token} onLogout={handleLogout} />}
     </div>
   );
 }
