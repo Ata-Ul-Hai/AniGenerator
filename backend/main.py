@@ -249,10 +249,23 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
     local_output_path = renderer_dir / "runs" / output_filename
     local_output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write local props for Remotion to read
+    # Write sanitized props for Remotion to read
+    # We strip the /artifacts prefix so Remotion resolves them relative to its public/ dir
     props_path = renderer_dir / "runs" / job_id / "render_props.json"
     props_path.parent.mkdir(parents=True, exist_ok=True)
-    props_path.write_text(json.dumps(props.model_dump(), indent=2))
+    
+    sanitized_props = props.model_dump()
+    for scene in sanitized_props.get("scenes", []):
+        if "audio_path" in scene and isinstance(scene["audio_path"], str):
+            path = scene["audio_path"]
+            # Remove any known prefixes and leading slashes to make it relative to 'public'
+            for prefix in ["/artifacts", "/local-artifacts", "artifacts", "local-artifacts"]:
+                if path.startswith(prefix):
+                    path = path[len(prefix):]
+            scene["audio_path"] = path.lstrip("/")
+            logger.info("Sanitized asset for render: %s", scene["audio_path"])
+    
+    props_path.write_text(json.dumps(sanitized_props, indent=2))
 
     command = [
         "npx", "remotion", "render", "src/Root.tsx", "Whiteboard",
