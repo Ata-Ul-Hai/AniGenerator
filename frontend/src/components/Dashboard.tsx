@@ -166,7 +166,16 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
                     <p className="text-[10px] text-zinc-700 mt-1 uppercase tracking-widest font-bold">PDF, DOCX, TXT</p>
                   </div>
                 </div>
-                <input type="file" className="hidden" onChange={(e) => e.target.files?.[0] && setFile(e.target.files[0])} />
+                <input type="file" className="hidden" onChange={(e) => {
+                  if (e.target.files?.[0]) {
+                    setFile(e.target.files[0]);
+                    setExtractedText("");
+                    setJob(null);
+                    setStatusMsg("");
+                    setIsError(false);
+                    setStage("idle");
+                  }
+                }} />
               </label>
 
               <button
@@ -311,7 +320,7 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold text-zinc-700 uppercase">Process ID</span>
-                  <span className="text-[10px] font-mono text-zinc-500">{job?.id?.slice(0, 16) || "EMPTY_ID"}</span>
+                  <span className="text-[10px] font-mono text-zinc-500">{job?.job_id?.slice(0, 16) || "EMPTY_ID"}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold text-zinc-700 uppercase">Scenes Predicted</span>
