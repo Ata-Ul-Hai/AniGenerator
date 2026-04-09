@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { cn } from "../lib/utils";
 import { 
   Upload, Zap, LogOut, Loader2, FileVideo, 
@@ -14,7 +14,7 @@ interface Props {
 type JobStatus = "queued" | "running" | "completed" | "failed";
 
 interface JobState {
-  id: string;
+  job_id: string;
   status: JobStatus;
   error?: string;
   video_path?: string;

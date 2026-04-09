@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { SpotlightCard } from "./common/SpotlightCard";
+import React from "react";
 import { BackgroundBeams } from "./ui/background-beams";
 import { FileText, Zap, Film, ArrowRight } from "lucide-react";
 import { IconBrandGithub } from "@tabler/icons-react";
