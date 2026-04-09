@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { cn } from "../lib/utils";
 import { 
   Upload, Zap, LogOut, Loader2, FileVideo, 
@@ -269,7 +269,7 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
               </div>
               {job?.video_path && (
                 <a 
-                  href={job.video_path.startsWith('http') ? job.video_path : `${API_BASE_URL}${job.video_path}`}
+                  href={job.video_path.startsWith('http') ? job.video_path : `${API_BASE_URL}/${job.video_path.replace(/^\//, '')}`}
                   target="_blank" rel="noreferrer"
                   className="text-[10px] font-bold uppercase tracking-widest text-accent-blue hover:text-white transition-colors flex items-center gap-1.5"
                 >
@@ -280,7 +280,7 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
             
             <div className="flex-1 bg-[#050505] relative flex items-center justify-center">
               {job?.video_path ? (
-                <video src={job.video_path.startsWith('http') ? job.video_path : `${API_BASE_URL}${job.video_path}`} controls className="w-full h-full object-contain" />
+                <video src={job.video_path.startsWith('http') ? job.video_path : `${API_BASE_URL}/${job.video_path.replace(/^\//, '')}`} controls className="w-full h-full object-contain" />
               ) : (
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center border-dashed">
