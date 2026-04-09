@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -32,11 +33,22 @@ class LocalStorageProvider(StorageProvider):
     def __init__(self, base_dir: Path, public_url_prefix: str = "/artifacts"):
         self.base_dir = base_dir
         self.public_url_prefix = public_url_prefix
+        logger.info("LocalStorageProvider initialized at %s", base_dir)
 
     def upload_file(self, local_path: str | Path, remote_rel_path: str) -> str:
-        # For local, we assume files are already written to the renderer/public dir
-        # or we could explicitly copy them if needed.
-        # Here we just return the relative path prefix.
+        """Copy file to the local public directory with robust traversal protection."""
+        base_dir_resolved = self.base_dir.resolve()
+        # lstrip slashes to ensure we join as a relative path
+        dest_path = (base_dir_resolved / remote_rel_path.lstrip("/")).resolve()
+        
+        # Ensure the resolved destination is strictly within the base directory
+        if not dest_path.is_relative_to(base_dir_resolved):
+            raise ValueError(f"Security Warning: Path traversal attempt blocked: {remote_rel_path}")
+
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(local_path, dest_path)
+        logger.info("Local Storage (Secured): %s -> %s", local_path, dest_path)
+        
         return self.get_url(remote_rel_path)
 
     def get_url(self, remote_rel_path: str) -> str:
@@ -62,9 +74,6 @@ class GcsStorageProvider(StorageProvider):
         return self.get_url(remote_rel_path)
 
     def get_url(self, remote_rel_path: str) -> str:
-        # In a real setup, we might return a Signed URL or a CDN URL.
-        # For now, we return 'artifacts/path' which the backend will resolve
-        # or the frontend will use to build the URL.
         return f"artifacts/{remote_rel_path.lstrip('/')}"
 
 
@@ -76,5 +85,10 @@ def get_storage_provider(settings: Any) -> StorageProvider:
     
     logger.info("Using Local Storage Provider")
     # For local, 'base_dir' is typically '../renderer/public'
-    renderer_root = Path(__file__).resolve().parent.parent.parent / "renderer"
-    return LocalStorageProvider(renderer_root / "public")
+    # We use an absolute path to ensure clarity in Docker
+    backend_root = Path(__file__).resolve().parent.parent
+    renderer_public = backend_root.parent / "renderer" / "public"
+    
+    # In Docker, we might have a specific mount point for artifacts
+    # For now, we use the renderer's public dir so Remotion sees it instantly
+    return LocalStorageProvider(renderer_public)
