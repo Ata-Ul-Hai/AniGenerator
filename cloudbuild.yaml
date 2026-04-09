@@ -26,7 +26,8 @@ steps:
       '--memory', '2Gi',
       '--cpu', '1',
       '--no-cpu-throttling',
-      '--set-env-vars', 'APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      '--set-env-vars', 'APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID',
+      '--add-cloudsql-instances', 'project-06f2ef8c-5135-4a41-b19:europe-west1:anigen-db'
     ]
 
 options:

@@ -50,6 +50,13 @@ _allowed_origins = [
     origin.strip() for origin in _settings.allowed_origins.split(",") if origin.strip()
 ]
 
+# Ensure the production Vercel frontend is always explicitly allowed in production mode
+if _settings.app_env.lower() == "production":
+    production_frontend = "https://ani-generator.vercel.app"
+    if production_frontend not in _allowed_origins and "*" not in _allowed_origins:
+        _allowed_origins.append(production_frontend)
+        logger.info("Auto-authorized production frontend: %s", production_frontend)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
