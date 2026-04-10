@@ -7,7 +7,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from backend.core.secrets import get_secret
@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     max_concurrent_renders: int = Field(default=1, alias="MAX_CONCURRENT_RENDERS")
     enable_auth: bool = Field(default=True, alias="ENABLE_AUTH")
     auth_username: str = Field(default="admin", alias="AUTH_USERNAME")
-    auth_password: str = Field(default="change_me", alias="AUTH_PASSWORD")
+    auth_password: str = Field(default="change_me", validation_alias=AliasChoices("AUTH_PASSWORD", "ADMIN_PASSWORD"))
     jwt_secret: str = Field(default="change_me", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=1440, alias="ACCESS_TOKEN_EXPIRE_MINUTES") # 24h
