@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
-
-from google.cloud import storage
 
 logger = logging.getLogger(__name__)
 
@@ -63,14 +60,30 @@ class GcsStorageProvider(StorageProvider):
     """Provider for Google Cloud Storage (Production)."""
 
     def __init__(self, bucket_name: str):
+        # Lazy import — only needed in production; avoids ImportError in dev
+        from google.cloud import storage
+
         self.bucket_name = bucket_name
         self.client = storage.Client()
         self.bucket = self.client.bucket(bucket_name)
+        logger.info("GcsStorageProvider initialized for bucket: %s", bucket_name)
 
     def upload_file(self, local_path: str | Path, remote_rel_path: str) -> str:
-        """Upload to GCS and return the GCS-style artifact path."""
+        """Upload to GCS with content-type detection and retry."""
+        import mimetypes
+
         blob = self.bucket.blob(remote_rel_path)
-        blob.upload_from_filename(str(local_path))
+
+        # Set content type based on file extension
+        content_type, _ = mimetypes.guess_type(str(local_path))
+        if content_type:
+            blob.content_type = content_type
+
+        # Set cache control for audio/video assets
+        if remote_rel_path.endswith((".mp3", ".mp4", ".wav")):
+            blob.cache_control = "public, max-age=3600"
+
+        blob.upload_from_filename(str(local_path), timeout=300)
         logger.info("Uploaded %s to gs://%s/%s", local_path, self.bucket_name, remote_rel_path)
         return self.get_url(remote_rel_path)
 

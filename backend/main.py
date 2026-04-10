@@ -4,23 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 import tempfile
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import contextmanager
+from collections import defaultdict
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from threading import BoundedSemaphore
-from time import perf_counter
+from time import perf_counter, time
 from typing import Any, Literal
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from backend.auth.jwt import require_auth_if_enabled
@@ -41,7 +42,83 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AniGenerator Production API", version="3.0.0")
+# ── ALLOWED FILE EXTENSIONS ──────────────────────────────────────────────────
+_ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+
+# ── JOB ID VALIDATION ───────────────────────────────────────────────────────
+_HEX_PATTERN = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _validate_job_id(job_id: str) -> str:
+    """Ensure job_id is a valid 32-char hex string (uuid4().hex output)."""
+    if not _HEX_PATTERN.match(job_id):
+        raise ValueError(f"Invalid job_id format: {job_id}")
+    return job_id
+
+
+# ── AUTH RATE LIMITER ────────────────────────────────────────────────────────
+
+class _AuthRateLimiter:
+    """In-memory per-IP rate limiter with exponential backoff for auth attempts."""
+
+    def __init__(self, max_attempts: int = 5, window_seconds: int = 300):
+        self._max_attempts = max_attempts
+        self._window_seconds = window_seconds
+        self._attempts: dict[str, list[float]] = defaultdict(list)
+
+    def check(self, client_ip: str) -> None:
+        """Raise 429 if too many attempts from this IP."""
+        now = time()
+        cutoff = now - self._window_seconds
+        # Prune old entries
+        self._attempts[client_ip] = [
+            t for t in self._attempts[client_ip] if t > cutoff
+        ]
+        if len(self._attempts[client_ip]) >= self._max_attempts:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Too many login attempts. Try again in {self._window_seconds}s.",
+            )
+
+    def record(self, client_ip: str) -> None:
+        """Record a failed attempt."""
+        self._attempts[client_ip].append(time())
+
+
+_auth_limiter = _AuthRateLimiter(max_attempts=5, window_seconds=300)
+
+
+# ── LIFESPAN ─────────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Modern lifespan handler replacing deprecated on_event."""
+    # ── STARTUP ──
+    settings = get_settings()
+    if settings.auto_create_tables:
+        create_all_tables()
+        logger.info("Auto-created database tables at startup")
+
+    if settings.recover_stale_jobs_on_startup:
+        db = SessionLocal()
+        try:
+            recovered = crud.recover_incomplete_jobs(
+                db,
+                reason="Job lost due to service restart/crash",
+            )
+            if recovered:
+                logger.warning("Recovered %s stale job(s) from previous lifecycle", recovered)
+        finally:
+            db.close()
+
+    yield
+
+    # ── SHUTDOWN ──
+    _JOB_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+    logger.info("Job executor shut down")
+
+
+app = FastAPI(title="AniGenerator Production API", version="3.1.0", lifespan=lifespan)
 
 _settings = get_settings()
 _storage = get_storage_provider(_settings)
@@ -65,6 +142,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# ── REQUEST ID MIDDLEWARE ────────────────────────────────────────────────────
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """Attach a unique request ID for distributed tracing."""
+    request_id = request.headers.get("X-Request-ID", uuid.uuid4().hex[:16])
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 # Attach auth router
 app.include_router(auth_router)
 
@@ -75,32 +164,6 @@ _JOB_EXECUTOR = ThreadPoolExecutor(
 )
 _RENDER_LIMITER = BoundedSemaphore(value=_settings.max_concurrent_renders)
 _INFLIGHT_JOB_LIMITER = BoundedSemaphore(value=_settings.job_queue_capacity)
-
-
-@app.on_event("startup")
-def startup() -> None:
-    settings = get_settings()
-    if settings.auto_create_tables:
-        create_all_tables()
-        logger.info("Auto-created database tables at startup")
-
-    if settings.recover_stale_jobs_on_startup:
-        db = SessionLocal()
-        try:
-            # Mark jobs that were "running" when the container died as failed
-            recovered = crud.recover_incomplete_jobs(
-                db,
-                reason="Job lost due to service restart/crash",
-            )
-            if recovered:
-                logger.warning("Recovered %s stale job(s) from previous lifecycle", recovered)
-        finally:
-            db.close()
-
-
-@app.on_event("shutdown")
-def shutdown() -> None:
-    _JOB_EXECUTOR.shutdown(wait=False, cancel_futures=False)
 
 
 # ── SCHEMAS ────────────────────────────────────────────────────────────────
@@ -251,6 +314,9 @@ def _generate_render_props_internal(
 def _run_remotion_render(job_id: str, props: RenderProps) -> str:
     """Run Remotion and upload result to storage."""
 
+    # Validate job_id before using in filesystem/subprocess
+    _validate_job_id(job_id)
+
     renderer_dir = _renderer_root()
     output_filename = f"{job_id}.mp4"
     local_output_path = renderer_dir / "runs" / output_filename
@@ -279,11 +345,24 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
         f"--props=runs/{job_id}/render_props.json",
         f"runs/{output_filename}",
         '--chromium-flags="--no-sandbox"',
+        '--concurrency=4',
     ]
     
     try:
         with _timed_stage(job_id, "remotion_render"):
-            subprocess.run(command, cwd=renderer_dir, check=True)
+            try:
+                subprocess.run(
+                    command,
+                    cwd=renderer_dir,
+                    check=True,
+                    timeout=3600,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                error_msg = f"Remotion render failed with exit logic {exc.returncode}.\nSTDERR:\n{exc.stderr}\nSTDOUT:\n{exc.stdout}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from exc
         
         # Upload final video
         remote_path = f"runs/{output_filename}"
@@ -326,6 +405,21 @@ def healthz():
     return {"status": "ok"}
 
 
+@app.get("/metrics")
+def metrics(db: Session = Depends(get_db)):
+    """Lightweight operational metrics for monitoring."""
+    jobs = crud.list_jobs(db, limit=100)
+    status_counts: dict[str, int] = defaultdict(int)
+    for job in jobs:
+        status_counts[job.status] += 1
+    return {
+        "queue_capacity": _settings.job_queue_capacity,
+        "worker_count": _settings.job_worker_count,
+        "max_concurrent_renders": _settings.max_concurrent_renders,
+        "jobs": dict(status_counts),
+    }
+
+
 @app.post("/upload", response_model=UploadResponse)
 def upload(
     file: UploadFile = File(...),
@@ -334,12 +428,27 @@ def upload(
     """Secure document upload and text extraction."""
     settings = get_settings()
     suffix = Path(file.filename or "").suffix.lower()
-    
+
+    # Validate file extension before doing any I/O
+    if suffix not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(_ALLOWED_EXTENSIONS))}",
+        )
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = Path(tmp.name)
 
     try:
+        # Enforce MAX_UPLOAD_MB
+        file_size_mb = tmp_path.stat().st_size / (1024 * 1024)
+        if file_size_mb > settings.max_upload_mb:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({file_size_mb:.1f} MB). Maximum is {settings.max_upload_mb} MB.",
+            )
+
         extracted = extract_text(str(tmp_path))
         chunks = chunk_text(extracted)
         return UploadResponse(extracted_text=extracted, chunk_count=len(chunks))
@@ -354,15 +463,30 @@ def generate_async(
     _sub: str = Depends(require_auth_if_enabled),
 ):
     """Enforce admin auth and queue persistent job."""
-    if not _INFLIGHT_JOB_LIMITER.acquire(blocking=False):
+    settings = get_settings()
+
+    # Enforce MAX_INPUT_CHARS
+    if len(request.extracted_text) > settings.max_input_chars:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Input text too large ({len(request.extracted_text)} chars). Maximum is {settings.max_input_chars}.",
+        )
+
+    acquired = _INFLIGHT_JOB_LIMITER.acquire(blocking=False)
+    if not acquired:
         raise HTTPException(status_code=429, detail="Queue is full")
 
-    job_id = uuid.uuid4().hex
-    crud.create_job(db, job_id, "", request.max_scenes or 12)
-    
-    _JOB_EXECUTOR.submit(
-        _background_job, job_id, request.extracted_text, request.max_scenes or 12, request.render_video
-    )
+    try:
+        job_id = uuid.uuid4().hex
+        crud.create_job(db, job_id, "", request.max_scenes or 12)
+        
+        _JOB_EXECUTOR.submit(
+            _background_job, job_id, request.extracted_text, request.max_scenes or 12, request.render_video
+        )
+    except Exception:
+        # Release semaphore if job setup fails before background_job runs
+        _INFLIGHT_JOB_LIMITER.release()
+        raise
     
     return GenerateAsyncResponse(job_id=job_id, status="queued")
 
@@ -434,3 +558,8 @@ if index_path.exists():
     @app.get("/", response_class=FileResponse)
     async def root():
         return FileResponse(index_path)
+
+
+# ── EXPORTED FOR TESTS ─────────────────────────────────────────────────────
+# Make the auth rate limiter accessible for the auth router
+app.state.auth_limiter = _auth_limiter

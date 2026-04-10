@@ -10,42 +10,21 @@ It will print the raw Gemini response and save the SVGs to test_output/
 so you can open them in a browser and see what they look like.
 """
 import json
-import os
+import re
 import sys
 from pathlib import Path
 
-def _sanitize_env_value(value: str) -> str:
-    """Remove surrounding quotes from .env style values."""
-
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"\"", "'"}:
-        return value[1:-1]
-    return value
-
-
-# Prefer the same settings loader used by backend/pipeline.
+# Use the backend settings loader for consistent configuration.
 try:
     from backend.core.config import get_settings
 
     settings = get_settings()
     GEMINI_API_KEY = settings.gemini_api_key
     GEMINI_MODEL = settings.gemini_model
-except Exception:
-    # Fallback for standalone usage without backend imports.
-    GEMINI_API_KEY = _sanitize_env_value(os.environ.get("GEMINI_API_KEY", ""))
-    GEMINI_MODEL = _sanitize_env_value(os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"))
-
-    env_file = Path(".env")
-    if env_file.exists() and not GEMINI_API_KEY:
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, raw_value = line.split("=", 1)
-            if key.strip() == "GEMINI_API_KEY" and not GEMINI_API_KEY:
-                GEMINI_API_KEY = _sanitize_env_value(raw_value)
-            if key.strip() == "GEMINI_MODEL" and GEMINI_MODEL == "gemini-2.5-flash":
-                GEMINI_MODEL = _sanitize_env_value(raw_value)
+except Exception as exc:
+    print(f"ERROR: Could not load backend settings: {exc}")
+    print("Make sure you have a .env file or GEMINI_API_KEY set in your environment.")
+    sys.exit(1)
 
 if not GEMINI_API_KEY:
     print("ERROR: GEMINI_API_KEY not set in environment or .env file")
@@ -120,7 +99,6 @@ def main():
         # Strip markdown fences if present
         cleaned = raw.strip()
         if cleaned.startswith("```"):
-            import re
             cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
             cleaned = re.sub(r"```$", "", cleaned).strip()
         start = cleaned.find("[")
@@ -141,7 +119,6 @@ def main():
             narration = scene.get("narration", "")
             
             # Count drawable elements
-            import re
             path_count = len(re.findall(r'<(path|line|polyline|polygon|circle|rect|ellipse)\b', svg))
             
             print(f"\nScene {sid}: {path_count} drawable elements")

@@ -1,17 +1,27 @@
-"""End-to-end orchestration script from document upload to Remotion render."""
+"""End-to-end orchestration script from document upload to async job completion.
+
+This script implements the modern async pipeline flow:
+  1. Upload document → extract text
+  2. Submit async generation job
+  3. Poll for job completion
+  4. Download or display result URL
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import logging
-import subprocess
+import sys
+import time
 import uuid
 from pathlib import Path
 
 import requests
 
-DEFAULT_API_URL = "http://127.0.0.1:8001"
+DEFAULT_API_URL = "http://127.0.0.1:8000"
+POLL_INTERVAL_SECONDS = 5
+MAX_POLL_DURATION_SECONDS = 1800  # 30 minutes
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,19 +37,31 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", required=True, help="Path to source PDF/DOCX/TXT document")
     parser.add_argument("--max-scenes", type=int, default=12, help="Maximum number of scenes")
     parser.add_argument(
-        "--run-id",
-        default="",
-        help="Optional run identifier used for render props and output artifact paths",
-    )
-    parser.add_argument(
         "--api-url",
         default=DEFAULT_API_URL,
         help="Base URL for backend API",
     )
+    parser.add_argument(
+        "--token",
+        default="",
+        help="Bearer token for authentication (if ENABLE_AUTH=true)",
+    )
+    parser.add_argument(
+        "--no-render",
+        action="store_true",
+        help="Skip video render, only generate scene props",
+    )
     return parser.parse_args()
 
 
-def upload_document(api_url: str, input_path: Path) -> dict:
+def _headers(token: str) -> dict[str, str]:
+    """Build authorization headers if a token is provided."""
+    if token:
+        return {"Authorization": f"Bearer {token}"}
+    return {}
+
+
+def upload_document(api_url: str, input_path: Path, token: str) -> dict:
     """Upload the source document and return extracted text metadata."""
 
     try:
@@ -47,6 +69,7 @@ def upload_document(api_url: str, input_path: Path) -> dict:
             response = requests.post(
                 f"{api_url}/upload",
                 files={"file": (input_path.name, handle, "application/octet-stream")},
+                headers=_headers(token),
                 timeout=180,
             )
         response.raise_for_status()
@@ -56,95 +79,96 @@ def upload_document(api_url: str, input_path: Path) -> dict:
         raise RuntimeError(f"Upload endpoint failed: {exc}") from exc
 
 
-def generate_render_props(api_url: str, extracted_text: str, max_scenes: int) -> dict:
-    """Request scene generation and receive render props JSON payload."""
+def submit_async_job(
+    api_url: str, extracted_text: str, max_scenes: int, render_video: bool, token: str,
+) -> str:
+    """Submit an async generation job and return the job ID."""
 
     payload = {
         "extracted_text": extracted_text,
         "max_scenes": max_scenes,
+        "render_video": render_video,
     }
     try:
-        response = requests.post(f"{api_url}/generate", json=payload, timeout=900)
+        response = requests.post(
+            f"{api_url}/generate/async",
+            json=payload,
+            headers={**_headers(token), "Content-Type": "application/json"},
+            timeout=60,
+        )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        return data["job_id"]
     except requests.RequestException as exc:
-        logger.exception("Generate request failed")
+        logger.exception("Generate async request failed")
         raise RuntimeError(f"Generate endpoint failed: {exc}") from exc
 
 
-def write_render_props(project_root: Path, render_props: dict, run_id: str) -> Path:
-    """Write run-scoped render props in renderer/runs and renderer/public/runs."""
+def poll_job(api_url: str, job_id: str, token: str) -> dict:
+    """Poll the job status until completion or timeout."""
 
-    renderer_root = project_root / "renderer"
-    renderer_runs = renderer_root / "runs" / run_id
-    renderer_public_runs = renderer_root / "public" / "runs" / run_id
-    renderer_runs.mkdir(parents=True, exist_ok=True)
-    renderer_public_runs.mkdir(parents=True, exist_ok=True)
+    start = time.monotonic()
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed > MAX_POLL_DURATION_SECONDS:
+            raise TimeoutError(f"Job {job_id} did not complete within {MAX_POLL_DURATION_SECONDS}s")
 
-    run_props_path = renderer_runs / "render_props.json"
-    public_props_path = renderer_public_runs / "render_props.json"
+        try:
+            response = requests.get(
+                f"{api_url}/jobs/{job_id}",
+                headers=_headers(token),
+                timeout=30,
+            )
+            response.raise_for_status()
+            data = response.json()
+        except requests.RequestException as exc:
+            logger.warning("Poll request failed (will retry): %s", exc)
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
 
-    serialized = json.dumps(render_props, indent=2)
-    run_props_path.write_text(serialized, encoding="utf-8")
-    public_props_path.write_text(serialized, encoding="utf-8")
-    return run_props_path
+        status = data.get("status", "unknown")
+        if status == "completed":
+            return data
+        if status == "failed":
+            raise RuntimeError(f"Job {job_id} failed: {data.get('error', 'Unknown error')}")
 
-
-def run_remotion_render(project_root: Path, props_path: Path, output_rel_path: str) -> None:
-    """Execute Remotion render command using a run-scoped props file."""
-
-    renderer_root = project_root / "renderer"
-    try:
-        props_arg = str(props_path.relative_to(renderer_root))
-    except ValueError:
-        props_arg = str(props_path)
-
-    command = [
-        "npx",
-        "remotion",
-        "render",
-        "src/Root.tsx",
-        "Whiteboard",
-        f"--props={props_arg}",
-        output_rel_path,
-    ]
-    try:
-        subprocess.run(command, cwd=renderer_root, check=True)
-    except subprocess.CalledProcessError as exc:
-        logger.exception("Remotion render failed")
-        raise RuntimeError(f"Remotion render command failed: {exc}") from exc
+        logger.info("Job %s status: %s (%.0fs elapsed)", job_id, status, elapsed)
+        time.sleep(POLL_INTERVAL_SECONDS)
 
 
 def main() -> None:
-    """Run the full upload, generation, and video render orchestration."""
+    """Run the full upload → async generate → poll pipeline."""
 
     args = parse_args()
     input_path = Path(args.input).expanduser().resolve()
     if not input_path.exists() or not input_path.is_file():
         raise FileNotFoundError(f"Input file not found: {input_path}")
 
-    project_root = Path(__file__).resolve().parent
-    run_id = args.run_id.strip() or uuid.uuid4().hex
-    output_rel_path = f"runs/{run_id}.mp4"
-
     print("[1/4] Uploading document and extracting text...")
-    upload_result = upload_document(args.api_url, input_path)
+    upload_result = upload_document(args.api_url, input_path, args.token)
     extracted_text = upload_result.get("extracted_text", "")
     chunk_count = upload_result.get("chunk_count", 0)
     print(f"      Extracted text received. Chunks: {chunk_count}")
 
-    print("[2/4] Generating scene choreography via backend...")
-    render_props = generate_render_props(args.api_url, extracted_text, args.max_scenes)
-    scene_count = len(render_props.get("scenes", []))
-    print(f"      Generation complete. Scenes: {scene_count}")
+    print("[2/4] Submitting async generation job...")
+    job_id = submit_async_job(
+        args.api_url, extracted_text, args.max_scenes,
+        render_video=not args.no_render, token=args.token,
+    )
+    print(f"      Job queued: {job_id}")
 
-    print("[3/4] Writing run-scoped render props...")
-    props_path = write_render_props(project_root, render_props, run_id=run_id)
-    print(f"      Render props written to {props_path}")
+    print("[3/4] Polling for completion...")
+    result = poll_job(args.api_url, job_id, args.token)
+    scene_count = len(result.get("render_props", {}).get("scenes", []))
+    print(f"      Job completed. Scenes: {scene_count}")
 
-    print("[4/4] Running Remotion render...")
-    run_remotion_render(project_root, props_path=props_path, output_rel_path=output_rel_path)
-    print(f"      Render complete: renderer/{output_rel_path}")
+    video_path = result.get("video_path")
+    if video_path:
+        print(f"[4/4] Video available at: {video_path}")
+    else:
+        print("[4/4] No video render requested or render skipped.")
+
+    print("\nPipeline finished successfully.")
 
 
 if __name__ == "__main__":

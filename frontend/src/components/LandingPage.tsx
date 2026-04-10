@@ -118,11 +118,9 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
       {/* ── Footer ────────────────────────────────── */}
       <footer className="px-6 py-12 border-t border-white/5 bg-zinc-950/50 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-zinc-500 text-sm font-medium">
-          <p>© 2025 AniGenerator. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} AniGenerator. All rights reserved.</p>
           <div className="flex items-center gap-8">
-            <a href="#" className="hover:text-white transition-colors">Documentation</a>
-            <a href="#" className="hover:text-white transition-colors">Privacy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms</a>
+            <a href="https://github.com/Ata-Ul-Hai/AniGenerator" target="_blank" rel="noreferrer" className="hover:text-white transition-colors">GitHub</a>
           </div>
         </div>
       </footer>
