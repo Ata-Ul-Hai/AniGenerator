@@ -10,11 +10,8 @@ This script implements the modern async pipeline flow:
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import sys
 import time
-import uuid
 from pathlib import Path
 
 import requests

@@ -21,7 +21,7 @@ interface JobState {
 }
 
 const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
-const MAX_CLIENT_FILE_SIZE_MB = 50;
+const MAX_CLIENT_FILE_SIZE_MB = 20;
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt";
 
 const Dashboard: React.FC<Props> = ({ token, onLogout }) => {

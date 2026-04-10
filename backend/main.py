@@ -360,7 +360,11 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
                     text=True,
                 )
             except subprocess.CalledProcessError as exc:
-                error_msg = f"Remotion render failed with exit logic {exc.returncode}.\nSTDERR:\n{exc.stderr}\nSTDOUT:\n{exc.stdout}"
+                error_msg = (
+                    f"Remotion render failed with exit code {exc.returncode}.\n"
+                    f"STDERR:\n{(exc.stderr or '')[-4000:]}\n"
+                    f"STDOUT:\n{(exc.stdout or '')[-4000:]}"
+                )
                 logger.error(error_msg)
                 raise RuntimeError(error_msg) from exc
         
@@ -406,7 +410,10 @@ def healthz():
 
 
 @app.get("/metrics")
-def metrics(db: Session = Depends(get_db)):
+def metrics(
+    db: Session = Depends(get_db),
+    _sub: str = Depends(require_auth_if_enabled),
+):
     """Lightweight operational metrics for monitoring."""
     jobs = crud.list_jobs(db, limit=100)
     status_counts: dict[str, int] = defaultdict(int)
@@ -449,7 +456,7 @@ def upload(
                 detail=f"File too large ({file_size_mb:.1f} MB). Maximum is {settings.max_upload_mb} MB.",
             )
 
-        extracted = extract_text(str(tmp_path))
+        extracted = extract_text(str(tmp_path), max_file_size_mb=settings.max_upload_mb)
         chunks = chunk_text(extracted)
         return UploadResponse(extracted_text=extracted, chunk_count=len(chunks))
     finally:

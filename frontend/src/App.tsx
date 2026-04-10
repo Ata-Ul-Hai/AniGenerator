@@ -10,7 +10,11 @@ function isTokenExpired(token: string): boolean {
   try {
     const parts = token.split(".");
     if (parts.length !== 3) return true;
-    const payload = JSON.parse(atob(parts[1]));
+    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
+    const payload = JSON.parse(atob(base64));
     if (!payload.exp) return false;
     return payload.exp * 1000 < Date.now();
   } catch {
