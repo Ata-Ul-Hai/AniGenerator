@@ -3,6 +3,7 @@ import {Composition, registerRoot} from 'remotion';
 
 import { Whiteboard } from './Whiteboard';
 import type {RenderProps} from './types';
+import {TRANSITION_MS} from './types';
 
 const defaultProps: RenderProps = {
   fps: 30,
@@ -12,7 +13,7 @@ const defaultProps: RenderProps = {
 };
 
 const estimateDuration = (props: RenderProps): number => {
-  const totalMs = props.scenes.reduce((sum, scene) => sum + scene.audio_duration_ms + 450, 0);
+  const totalMs = props.scenes.reduce((sum, scene) => sum + scene.audio_duration_ms + TRANSITION_MS, 0);
   const totalFrames = Math.max(90, Math.ceil((totalMs / 1000) * props.fps));
   return totalFrames;
 };

@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VOICE = "en-US-GuyNeural"
 
+# Timeout for TTS synthesis (seconds) — prevents indefinite hangs
+_TTS_TIMEOUT_SECONDS = 120
+
 
 async def _synthesize_async(narration: str, output_path: str, voice: str) -> None:
     """Generate a speech audio file asynchronously with edge-tts."""
@@ -41,6 +44,24 @@ def _synthesize_with_gtts(narration: str, output_path: str) -> None:
     tts.save(output_path)
 
 
+def _run_async_tts(narration: str, output_path: str, voice: str) -> None:
+    """Run async TTS in a new event loop — safe for use from worker threads.
+    
+    Using asyncio.new_event_loop() instead of asyncio.run() avoids conflicts
+    with the FastAPI main event loop when called from ThreadPoolExecutor threads.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(
+            asyncio.wait_for(
+                _synthesize_async(narration=narration, output_path=output_path, voice=voice),
+                timeout=_TTS_TIMEOUT_SECONDS,
+            )
+        )
+    finally:
+        loop.close()
+
+
 def synthesize(narration: str, output_path: str) -> int:
     """Synthesize narration to an MP3 file and return duration in milliseconds."""
 
@@ -52,7 +73,7 @@ def synthesize(narration: str, output_path: str) -> int:
 
     logger.info("Synthesizing audio to %s", target)
     try:
-        asyncio.run(_synthesize_async(narration=narration, output_path=str(target), voice=DEFAULT_VOICE))
+        _run_async_tts(narration=narration, output_path=str(target), voice=DEFAULT_VOICE)
     except Exception as exc:  # noqa: BLE001
         logger.warning("edge-tts failed; falling back to gTTS: %s", exc)
         _synthesize_with_gtts(narration=narration, output_path=str(target))

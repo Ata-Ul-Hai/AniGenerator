@@ -37,9 +37,13 @@ def _extract_docx_text(file_path: Path) -> str:
 
 
 def _extract_txt_text(file_path: Path) -> str:
-    """Extract plain text from a UTF-8 text file."""
+    """Extract plain text from a text file with encoding fallback."""
 
-    return file_path.read_text(encoding="utf-8")
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        logger.warning("Non-UTF-8 encoding detected in %s; using replacement characters", file_path)
+        return file_path.read_text(encoding="utf-8", errors="replace")
 
 
 def _normalize_text(text: str) -> str:
@@ -56,15 +60,20 @@ def _count_words(text: str) -> int:
     return len(text.split())
 
 
-def extract_text(file_path: str) -> str:
+def extract_text(file_path: str, max_file_size_mb: int = 50) -> str:
     """Extract text content from PDF, DOCX, or TXT file paths."""
 
     source = Path(file_path)
     if not source.exists() or not source.is_file():
         raise FileNotFoundError(f"Input file not found: {file_path}")
 
+    # Pre-check file size to prevent OOM on huge files
+    size_mb = source.stat().st_size / (1024 * 1024)
+    if size_mb > max_file_size_mb:
+        raise ValueError(f"File too large ({size_mb:.1f} MB). Maximum supported: {max_file_size_mb} MB")
+
     suffix = source.suffix.lower()
-    logger.info("Extracting text from %s", source)
+    logger.info("Extracting text from %s (%.1f MB)", source, size_mb)
 
     if suffix == ".pdf":
         raw = _extract_pdf_text(source)

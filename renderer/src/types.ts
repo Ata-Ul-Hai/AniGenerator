@@ -18,3 +18,6 @@ export type RenderProps = {
   height: number;
   scenes: SceneChoreography[];
 };
+
+/** Gap between scenes for transition animation (ms). Shared between Root and Whiteboard. */
+export const TRANSITION_MS = 450;

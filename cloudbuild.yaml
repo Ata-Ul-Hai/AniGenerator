@@ -23,12 +23,15 @@ steps:
       '--allow-unauthenticated',
       '--timeout', '3600',
       '--max-instances', '1',
-      '--memory', '2Gi',
-      '--cpu', '1',
+      '--memory', '8Gi',
+      '--cpu', '4',
       '--no-cpu-throttling',
       '--set-env-vars', 'APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID',
-      '--add-cloudsql-instances', 'project-06f2ef8c-5135-4a41-b19:europe-west1:anigen-db'
+      '--add-cloudsql-instances', '$PROJECT_ID:europe-west1:anigen-db'
     ]
+
+images:
+  - 'europe-west1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/anigenerator-git:$COMMIT_SHA'
 
 options:
   logging: CLOUD_LOGGING_ONLY

@@ -404,19 +404,44 @@ def _response_to_text(response: Any) -> str:
     raise ValueError("Gemini response did not contain text output")
 
 
+# Maximum response size to guard against memory exhaustion (500KB)
+_MAX_RESPONSE_CHARS = 512_000
+
+# Cached Gemini client singleton (created on first use)
+_gemini_client: genai.Client | None = None
+
+
+def _get_gemini_client() -> genai.Client:
+    """Return a cached Gemini client singleton."""
+    global _gemini_client
+    settings = get_settings()
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY is not set")
+    if _gemini_client is None:
+        _gemini_client = genai.Client(api_key=settings.gemini_api_key)
+    return _gemini_client
+
+
 def _generate_with_gemini(prompt: str) -> str:
     """Generate content from Gemini and return raw text output."""
 
     settings = get_settings()
-    if not settings.gemini_api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set")
-
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = _get_gemini_client()
     response = client.models.generate_content(
         model=settings.gemini_model,
         contents=prompt,
     )
-    return _response_to_text(response)
+    text = _response_to_text(response)
+
+    # Guard against unexpectedly large responses
+    if len(text) > _MAX_RESPONSE_CHARS:
+        logger.warning(
+            "Gemini response truncated from %s to %s chars",
+            len(text), _MAX_RESPONSE_CHARS,
+        )
+        text = text[:_MAX_RESPONSE_CHARS]
+
+    return text
 
 
 def generate_scenes(
@@ -437,6 +462,8 @@ def generate_scenes(
         scenes = _validate_scene_payload(first_response)
         if not scenes:
             raise ValueError("Gemini returned an empty scene list")
+        # Enforce max_scenes — Gemini may return more than requested
+        scenes = scenes[:max_scenes]
         logger.info("Generated %s scene(s) on first attempt", len(scenes))
         return scenes
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
@@ -451,6 +478,7 @@ def generate_scenes(
         scenes = _validate_scene_payload(second_response)
         if not scenes:
             raise ValueError("Gemini retry returned an empty scene list")
+        scenes = scenes[:max_scenes]
         logger.info("Generated %s scene(s) after retry", len(scenes))
         return scenes
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:

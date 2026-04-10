@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hmac import compare_digest
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from backend.auth.jwt import create_access_token
@@ -29,7 +29,7 @@ class AuthTokenResponse(BaseModel):
 
 
 @router.post("/token", response_model=AuthTokenResponse)
-def issue_access_token(request: AuthLoginRequest) -> AuthTokenResponse:
+def issue_access_token(request: AuthLoginRequest, http_request: Request) -> AuthTokenResponse:
 	"""Issue a JWT token using static credentials from environment settings."""
 
 	settings = get_settings()
@@ -39,9 +39,19 @@ def issue_access_token(request: AuthLoginRequest) -> AuthTokenResponse:
 			detail="Authentication is disabled (ENABLE_AUTH=false)",
 		)
 
+	# Rate limiting — check before credential validation
+	raw_ip = http_request.client.host if http_request.client else "unknown"
+	client_ip = http_request.headers.get("X-Forwarded-For", raw_ip).split(",")[0].strip()
+	limiter = getattr(http_request.app.state, "auth_limiter", None)
+	if limiter is not None:
+		limiter.check(client_ip)
+
 	valid_username = compare_digest(request.username, settings.auth_username)
 	valid_password = compare_digest(request.password, settings.auth_password)
 	if not (valid_username and valid_password):
+		# Record failed attempt for rate limiting
+		if limiter is not None:
+			limiter.record(client_ip)
 		raise HTTPException(
 			status_code=status.HTTP_401_UNAUTHORIZED,
 			detail="Invalid credentials",

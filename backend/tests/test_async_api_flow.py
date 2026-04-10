@@ -11,8 +11,6 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from backend.core.config import get_settings
-
 
 class _ImmediateExecutor:
     """Executor test double that runs submitted jobs synchronously."""
@@ -30,10 +28,20 @@ class _ImmediateExecutor:
 class AsyncApiFlowTests(unittest.TestCase):
     """Validate async generation queueing and persisted status retrieval."""
 
+    _original_env: dict[str, str | None]
+    _env_keys = [
+        "DATABASE_URL", "APP_ENV", "AUTO_CREATE_TABLES", "ENABLE_AUTH",
+        "JOB_WORKER_COUNT", "JOB_QUEUE_CAPACITY", "MAX_CONCURRENT_RENDERS",
+        "MAX_INPUT_CHARS",
+    ]
+
     @classmethod
     def setUpClass(cls) -> None:
         cls._tempdir = tempfile.TemporaryDirectory()
         db_path = Path(cls._tempdir.name) / "test_async.db"
+
+        # Save original environment so we can restore it later
+        cls._original_env = {k: os.environ.get(k) for k in cls._env_keys}
 
         os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["APP_ENV"] = "development"
@@ -44,13 +52,16 @@ class AsyncApiFlowTests(unittest.TestCase):
         os.environ["MAX_CONCURRENT_RENDERS"] = "1"
         os.environ["MAX_INPUT_CHARS"] = "10000"
 
+        from backend.core.config import get_settings
         get_settings.cache_clear()
+
         import backend.main as main_module
         from backend.db.database import engine as db_engine
 
         cls.main = importlib.reload(main_module)
         cls._engine = db_engine
-        cls.main.create_all_tables()
+        from backend.db.database import create_all_tables
+        create_all_tables()
         cls.client = TestClient(cls.main.app)
 
     @classmethod
@@ -59,10 +70,20 @@ class AsyncApiFlowTests(unittest.TestCase):
         cls._engine.dispose()
         cls._tempdir.cleanup()
 
+        # Restore original environment
+        for key, value in cls._original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+        from backend.core.config import get_settings
+        get_settings.cache_clear()
+
     def test_generate_async_and_fetch_job_status(self) -> None:
         """Queue an async job and verify persisted completed state + artifact path."""
 
-        def _fake_run_job(job_id: str, extracted_text: str, max_scenes: int, render_video: bool) -> None:
+        def _fake_run_job(job_id: str, text: str, max_sc: int, render: bool) -> None:
             db = self.main.SessionLocal()
             try:
                 self.main.crud.set_job_running(db, job_id)
@@ -81,7 +102,7 @@ class AsyncApiFlowTests(unittest.TestCase):
                         }
                     ],
                 )
-                if render_video:
+                if render:
                     self.main.crud.create_video(
                         db,
                         job_id=job_id,
@@ -91,7 +112,7 @@ class AsyncApiFlowTests(unittest.TestCase):
             finally:
                 db.close()
 
-        with mock.patch.object(self.main, "_run_generation_job", side_effect=_fake_run_job):
+        with mock.patch.object(self.main, "_background_job", side_effect=_fake_run_job):
             with mock.patch.object(self.main, "_JOB_EXECUTOR", _ImmediateExecutor()):
                 response = self.client.post(
                     "/generate/async",
@@ -129,7 +150,7 @@ class AsyncApiFlowTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 413)
-        self.assertIn("too large", response.json()["detail"])
+        self.assertIn("too large", response.json()["detail"].lower())
 
 
 if __name__ == "__main__":

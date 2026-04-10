@@ -17,12 +17,14 @@ Usage in main.py:
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from backend.db.models import Job, Scene, Video
 
+logger = logging.getLogger(__name__)
 
 # ── Job ───────────────────────────────────────────────────────────────────────
 
@@ -58,7 +60,7 @@ def recover_incomplete_jobs(db: Session, reason: str) -> int:
                 Job.error: reason,
                 Job.updated_at: now,
             },
-            synchronize_session=False,
+            synchronize_session="fetch",
         )
     )
     db.commit()
@@ -67,27 +69,33 @@ def recover_incomplete_jobs(db: Session, reason: str) -> int:
 
 def set_job_running(db: Session, job_id: str) -> None:
     job = db.get(Job, job_id)
-    if job:
-        job.status = "running"
-        job.updated_at = datetime.now(timezone.utc)
-        db.commit()
+    if not job:
+        logger.error("set_job_running: job %s not found — state transition skipped", job_id)
+        return
+    job.status = "running"
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
 
 
 def set_job_completed(db: Session, job_id: str) -> None:
     job = db.get(Job, job_id)
-    if job:
-        job.status = "completed"
-        job.updated_at = datetime.now(timezone.utc)
-        db.commit()
+    if not job:
+        logger.error("set_job_completed: job %s not found — state transition skipped", job_id)
+        return
+    job.status = "completed"
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
 
 
 def set_job_failed(db: Session, job_id: str, error: str) -> None:
     job = db.get(Job, job_id)
-    if job:
-        job.status = "failed"
-        job.error = error
-        job.updated_at = datetime.now(timezone.utc)
-        db.commit()
+    if not job:
+        logger.error("set_job_failed: job %s not found — state transition skipped", job_id)
+        return
+    job.status = "failed"
+    job.error = error
+    job.updated_at = datetime.now(timezone.utc)
+    db.commit()
 
 
 # ── Scenes ────────────────────────────────────────────────────────────────────

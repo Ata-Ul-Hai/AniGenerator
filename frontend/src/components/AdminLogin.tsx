@@ -36,12 +36,16 @@ const AdminLogin: React.FC<Props> = ({ onLogin, onBack }) => {
         body: JSON.stringify({ username, password }),
       });
 
-      if (!resp.ok) throw new Error("Authentication failed");
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({ detail: "Authentication failed" }));
+        throw new Error(data.detail || "Authentication failed");
+      }
 
       const data = await resp.json();
       onLogin(data.access_token);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "An unexpected error occurred";
+      setError(message);
       triggerShake();
     } finally {
       setLoading(false);

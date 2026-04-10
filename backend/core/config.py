@@ -14,6 +14,8 @@ from backend.core.secrets import get_secret
 
 logger = logging.getLogger(__name__)
 
+_INSECURE_DEFAULTS = {"change_me", "", "admin123", "replace_with_strong_password", "replace_with_long_random_secret"}
+
 
 class Settings(BaseSettings):
     app_env: str = Field(default="development", alias="APP_ENV")
@@ -94,6 +96,36 @@ class Settings(BaseSettings):
                 if not self.database_url.startswith("sqlite:////tmp/"):
                     logger.warning("Relative SQLite path in production; redirecting to /tmp/anigen.db.")
                     self.database_url = "sqlite:////tmp/anigen.db"
+
+        return self
+
+    @model_validator(mode="after")
+    def enforce_secure_defaults_in_production(self) -> "Settings":
+        """Refuse to start in production with insecure default credentials."""
+
+        if self.app_env.lower() != "production":
+            return self
+
+        if not self.enable_auth:
+            logger.warning(
+                "ENABLE_AUTH is disabled in production — authentication is OFF. "
+                "This is a security risk unless protected by an external IAM layer."
+            )
+            return self
+
+        errors: list[str] = []
+
+        if self.auth_password in _INSECURE_DEFAULTS:
+            errors.append("AUTH_PASSWORD is set to an insecure default")
+
+        if self.jwt_secret in _INSECURE_DEFAULTS:
+            errors.append("JWT_SECRET is set to an insecure default")
+
+        if errors:
+            raise ValueError(
+                f"Refusing to start in production with insecure configuration: {'; '.join(errors)}. "
+                "Set strong values via environment variables or GCP Secret Manager."
+            )
 
         return self
 

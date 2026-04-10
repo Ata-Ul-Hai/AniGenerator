@@ -4,8 +4,7 @@ import {AbsoluteFill, Audio, Sequence, spring, staticFile, useCurrentFrame, useV
 import {Subtitles} from './components/Subtitles';
 import {SvgDrawer} from './components/SvgDrawer';
 import type {RenderProps, SceneChoreography} from './types';
-
-const TRANSITION_MS = 450;
+import {TRANSITION_MS} from './types';
 
 const msToFrames = (valueMs: number, fps: number): number => Math.max(1, Math.round((valueMs / 1000) * fps));
 

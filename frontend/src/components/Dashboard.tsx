@@ -20,6 +20,10 @@ interface JobState {
   video_path?: string;
 }
 
+const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
+const MAX_CLIENT_FILE_SIZE_MB = 20;
+const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt";
+
 const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   const [file, setFile] = useState<File | null>(null);
   const [extractedText, setExtractedText] = useState("");
@@ -29,7 +33,8 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   const [stage, setStage] = useState<"idle" | "extracting" | "extracted" | "generating">("idle");
   const [statusMsg, setStatusMsg] = useState("");
   const [isError, setIsError] = useState(false);
-  const pollRef = useRef<any>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollCountRef = useRef(0);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
   const headers = { Authorization: `Bearer ${token}` };
@@ -37,30 +42,57 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, []);
 
   const pollJob = (jobId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
+    if (pollRef.current) clearTimeout(pollRef.current);
+    pollCountRef.current = 0;
+
+    const executePoll = async () => {
+      pollCountRef.current += 1;
+
+      // Timeout after MAX_POLL_ATTEMPTS
+      if (pollCountRef.current > MAX_POLL_ATTEMPTS) {
+        pollRef.current = null;
+        setIsError(true);
+        setStatusMsg("Polling timeout — job may still be running. Refresh to check status.");
+        setStage("idle");
+        return;
+      }
+
       try {
         const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, { headers });
+        if (res.status === 401) {
+          pollRef.current = null;
+          setIsError(true);
+          setStatusMsg("Session expired. Please log in again.");
+          setStage("idle");
+          return;
+        }
         if (!res.ok) throw new Error("Status poll failed");
         const data = await res.json();
         setJob(data);
         if (data.status === "completed" || data.status === "failed") {
-          clearInterval(pollRef.current);
+          pollRef.current = null;
           setStage("idle");
           setIsError(data.status === "failed");
           setStatusMsg(data.status === "completed" ? "Generation successful" : `Engine Error: ${data.error || "Unknown error"}`);
+          return;
         }
-      } catch (err: any) {
-        clearInterval(pollRef.current);
+      } catch (err: unknown) {
+        pollRef.current = null;
         setIsError(true);
-        setStatusMsg(`Network Error: ${err.message}`);
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setStatusMsg(`Network Error: ${message}`);
+        return;
       }
-    }, 3000);
+      
+      pollRef.current = setTimeout(executePoll, 3000);
+    };
+
+    executePoll();
   };
 
   const handleExtract = async () => {
@@ -86,9 +118,10 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
       setExtractedText(data.extracted_text || "");
       setStage("extracted");
       setStatusMsg(`Successfully extracted ${data.chunk_count ?? 0} semantic units.`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsError(true);
-      setStatusMsg(`Connection Error: ${err.message}`);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setStatusMsg(`Connection Error: ${message}`);
       setStage("idle");
     }
   };
@@ -116,11 +149,36 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
 
       setJob(data);
       pollJob(data.job_id);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIsError(true);
-      setStatusMsg(`Composition Error: ${err.message}`);
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setStatusMsg(`Composition Error: ${message}`);
       setStage("idle");
     }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+
+    // Client-side file size validation
+    const sizeMb = selected.size / (1024 * 1024);
+    if (sizeMb > MAX_CLIENT_FILE_SIZE_MB) {
+      setFile(null);
+      setExtractedText("");
+      setJob(null);
+      setStage("idle");
+      setIsError(true);
+      setStatusMsg(`File too large (${sizeMb.toFixed(1)} MB). Maximum is ${MAX_CLIENT_FILE_SIZE_MB} MB.`);
+      return;
+    }
+
+    setFile(selected);
+    setExtractedText("");
+    setJob(null);
+    setStatusMsg("");
+    setIsError(false);
+    setStage("idle");
   };
 
   return (
@@ -166,16 +224,12 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
                     <p className="text-[10px] text-zinc-700 mt-1 uppercase tracking-widest font-bold">PDF, DOCX, TXT</p>
                   </div>
                 </div>
-                <input type="file" className="hidden" onChange={(e) => {
-                  if (e.target.files?.[0]) {
-                    setFile(e.target.files[0]);
-                    setExtractedText("");
-                    setJob(null);
-                    setStatusMsg("");
-                    setIsError(false);
-                    setStage("idle");
-                  }
-                }} />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept={ACCEPTED_FILE_TYPES}
+                  onChange={handleFileChange}
+                />
               </label>
 
               <button
