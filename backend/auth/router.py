@@ -40,7 +40,8 @@ def issue_access_token(request: AuthLoginRequest, http_request: Request) -> Auth
 		)
 
 	# Rate limiting — check before credential validation
-	client_ip = http_request.client.host if http_request.client else "unknown"
+	raw_ip = http_request.client.host if http_request.client else "unknown"
+	client_ip = http_request.headers.get("X-Forwarded-For", raw_ip).split(",")[0].strip()
 	limiter = getattr(http_request.app.state, "auth_limiter", None)
 	if limiter is not None:
 		limiter.check(client_ip)

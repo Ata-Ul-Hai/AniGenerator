@@ -14,7 +14,7 @@ from backend.core.secrets import get_secret
 
 logger = logging.getLogger(__name__)
 
-_INSECURE_DEFAULTS = {"change_me", ""}
+_INSECURE_DEFAULTS = {"change_me", "", "admin123", "replace_with_strong_password", "replace_with_long_random_secret"}
 
 
 class Settings(BaseSettings):
@@ -106,19 +106,20 @@ class Settings(BaseSettings):
         if self.app_env.lower() != "production":
             return self
 
-        errors: list[str] = []
-
-        if self.enable_auth and self.auth_password in _INSECURE_DEFAULTS:
-            errors.append("AUTH_PASSWORD is set to an insecure default")
-
-        if self.jwt_secret in _INSECURE_DEFAULTS:
-            errors.append("JWT_SECRET is set to an insecure default")
-
         if not self.enable_auth:
             logger.warning(
                 "ENABLE_AUTH is disabled in production — authentication is OFF. "
                 "This is a security risk unless protected by an external IAM layer."
             )
+            return self
+
+        errors: list[str] = []
+
+        if self.auth_password in _INSECURE_DEFAULTS:
+            errors.append("AUTH_PASSWORD is set to an insecure default")
+
+        if self.jwt_secret in _INSECURE_DEFAULTS:
+            errors.append("JWT_SECRET is set to an insecure default")
 
         if errors:
             raise ValueError(

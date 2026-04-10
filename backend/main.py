@@ -367,6 +367,14 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
                 )
                 logger.error(error_msg)
                 raise RuntimeError(error_msg) from exc
+            except subprocess.TimeoutExpired as exc:
+                error_msg = (
+                    f"Remotion render timed out after {exc.timeout}s.\n"
+                    f"STDERR:\n{(exc.stderr or '')[-4000:]}\n"
+                    f"STDOUT:\n{(exc.stdout or '')[-4000:]}"
+                )
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from exc
         
         # Upload final video
         remote_path = f"runs/{output_filename}"

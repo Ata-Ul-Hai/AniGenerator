@@ -118,6 +118,12 @@ def poll_job(api_url: str, job_id: str, token: str) -> dict:
             )
             response.raise_for_status()
             data = response.json()
+        except requests.HTTPError as exc:
+            if exc.response is not None and 400 <= exc.response.status_code < 500:
+                raise RuntimeError(f"Permanent HTTP error during polling: {exc}") from exc
+            logger.warning("Poll request failed with HTTP error (will retry): %s", exc)
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
         except requests.RequestException as exc:
             logger.warning("Poll request failed (will retry): %s", exc)
             time.sleep(POLL_INTERVAL_SECONDS)

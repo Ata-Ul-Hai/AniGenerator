@@ -33,7 +33,7 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   const [stage, setStage] = useState<"idle" | "extracting" | "extracted" | "generating">("idle");
   const [statusMsg, setStatusMsg] = useState("");
   const [isError, setIsError] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCountRef = useRef(0);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -42,20 +42,19 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
+      if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, []);
 
   const pollJob = (jobId: string) => {
-    if (pollRef.current) clearInterval(pollRef.current);
+    if (pollRef.current) clearTimeout(pollRef.current);
     pollCountRef.current = 0;
 
-    pollRef.current = setInterval(async () => {
+    const executePoll = async () => {
       pollCountRef.current += 1;
 
       // Timeout after MAX_POLL_ATTEMPTS
       if (pollCountRef.current > MAX_POLL_ATTEMPTS) {
-        clearInterval(pollRef.current!);
         pollRef.current = null;
         setIsError(true);
         setStatusMsg("Polling timeout — job may still be running. Refresh to check status.");
@@ -66,7 +65,6 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
       try {
         const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, { headers });
         if (res.status === 401) {
-          clearInterval(pollRef.current!);
           pollRef.current = null;
           setIsError(true);
           setStatusMsg("Session expired. Please log in again.");
@@ -77,20 +75,24 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
         const data = await res.json();
         setJob(data);
         if (data.status === "completed" || data.status === "failed") {
-          clearInterval(pollRef.current!);
           pollRef.current = null;
           setStage("idle");
           setIsError(data.status === "failed");
           setStatusMsg(data.status === "completed" ? "Generation successful" : `Engine Error: ${data.error || "Unknown error"}`);
+          return;
         }
       } catch (err: unknown) {
-        clearInterval(pollRef.current!);
         pollRef.current = null;
         setIsError(true);
         const message = err instanceof Error ? err.message : "Unknown error";
         setStatusMsg(`Network Error: ${message}`);
+        return;
       }
-    }, 3000);
+      
+      pollRef.current = setTimeout(executePoll, 3000);
+    };
+
+    executePoll();
   };
 
   const handleExtract = async () => {
@@ -162,6 +164,10 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     // Client-side file size validation
     const sizeMb = selected.size / (1024 * 1024);
     if (sizeMb > MAX_CLIENT_FILE_SIZE_MB) {
+      setFile(null);
+      setExtractedText("");
+      setJob(null);
+      setStage("idle");
       setIsError(true);
       setStatusMsg(`File too large (${sizeMb.toFixed(1)} MB). Maximum is ${MAX_CLIENT_FILE_SIZE_MB} MB.`);
       return;
