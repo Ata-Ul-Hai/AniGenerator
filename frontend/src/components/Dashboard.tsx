@@ -27,7 +27,7 @@ const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt";
 const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   const [file, setFile] = useState<File | null>(null);
   const [extractedText, setExtractedText] = useState("");
-  const [maxScenes, setMaxScenes] = useState(15);
+  const [maxScenes, setMaxScenes] = useState(6);
   const [renderVideo, setRenderVideo] = useState(true);
   const [job, setJob] = useState<JobState | null>(null);
   const [stage, setStage] = useState<"idle" | "extracting" | "extracted" | "generating">("idle");
@@ -259,7 +259,7 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
                     <span className="text-[10px] font-mono text-accent-purple font-bold">{maxScenes}</span>
                   </div>
                   <input 
-                    type="range" min="1" max="24" step="1" 
+                    type="range" min="1" max="8" step="1" 
                     value={maxScenes} onChange={(e) => setMaxScenes(+e.target.value)}
                     className="w-full h-1 bg-zinc-900 rounded-lg appearance-none accent-accent-purple"
                   />

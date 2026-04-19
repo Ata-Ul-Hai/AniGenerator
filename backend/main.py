@@ -33,7 +33,7 @@ from backend.db.database import SessionLocal, create_all_tables, get_db
 from backend.db.models import Job
 from backend.services.audio_gen import synthesize
 from backend.services.llm_director import generate_scenes
-from backend.services.parser import chunk_text, extract_text
+from backend.services.parser import chunk_text, extract_text, smart_sample_text
 from backend.services.storage_service import get_storage_provider
 
 logging.basicConfig(
@@ -175,7 +175,7 @@ class UploadResponse(BaseModel):
 
 class GenerateRequest(BaseModel):
     extracted_text: str = Field(..., min_length=1)
-    max_scenes: int | None = Field(default=None, ge=1)
+    max_scenes: int | None = Field(default=None, ge=1, le=8)
     render_video: bool = Field(default=True)
 
 
@@ -261,12 +261,35 @@ def _generate_render_props_internal(
     max_scenes: int,
     run_id: str
 ) -> RenderProps:
-    """End-to-end scene generation and TTS synthesis."""
+    """End-to-end scene generation and TTS synthesis with content guardrails."""
 
     settings = get_settings()
+
+    # ── GUARDRAIL 1: minimum content check, auto-reduce scenes if doc too thin ─
+    word_count = len(extracted_text.split())
+    min_required_words = max_scenes * 80
+    if word_count < min_required_words:
+        adjusted = max(1, word_count // 80)
+        logger.warning(
+            "Content too thin (%s words) for %s scenes. Auto-reducing to %s scenes.",
+            word_count, max_scenes, adjusted,
+        )
+        max_scenes = adjusted
+
+    # ── GUARDRAIL 2: dynamic narration word budget (targets ≤ 120s video) ─────
+    max_words_per_narration = max(10, 300 // max_scenes)
+    logger.info(
+        "Narration budget: %s words/scene (%s scenes, target ≤ 120s)",
+        max_words_per_narration, max_scenes,
+    )
+
+    # ── GUARDRAIL 3: smart sampling for large documents ───────────────────────
+    with _timed_stage(run_id, "smart_sample"):
+        sampled_text = smart_sample_text(extracted_text, max_chars=settings.max_input_chars)
+
     with _timed_stage(run_id, "chunk_text"):
-        chunks = chunk_text(extracted_text)
-    
+        chunks = chunk_text(sampled_text)
+
     if not chunks:
         raise ValueError("No text content available to generate scenes")
 
@@ -280,7 +303,11 @@ def _generate_render_props_internal(
             if len(raw_scenes) >= max_scenes:
                 break
             with _timed_stage(run_id, f"llm_chunk_{chunk_index}"):
-                generated = generate_scenes(chunk, max_scenes - len(raw_scenes))
+                generated = generate_scenes(
+                    chunk,
+                    max_scenes - len(raw_scenes),
+                    max_words_per_narration=max_words_per_narration,
+                )
             raw_scenes.extend(generated)
 
         # TTS Batch processing
@@ -311,79 +338,156 @@ def _generate_render_props_internal(
         return props
 
 
-def _run_remotion_render(job_id: str, props: RenderProps) -> str:
-    """Run Remotion and upload result to storage."""
+# ── PARALLEL RENDER HELPERS ───────────────────────────────────────────────────
 
-    # Validate job_id before using in filesystem/subprocess
+_N_RENDER_WORKERS = 4  # matches the 4 vCPUs on Cloud Run
+
+
+def _render_scene_group(
+    group_idx: int,
+    scenes: list[SceneChoreography],
+    job_id: str,
+    renderer_dir: Path,
+    tmp_dir: Path,
+) -> Path:
+    """Render one group of scenes as a single chunk MP4.
+
+    Each group runs in its own process with --concurrency=1 so the four
+    parallel renders each get a dedicated vCPU without fighting each other.
+    Audio paths are sanitized here (mirrors the logic from the old single render)
+    so Remotion can resolve them relative to its public/ directory.
+    """
+
+    sanitized_scenes: list[dict] = []
+    for scene in scenes:
+        scene_dict = scene.model_dump()
+        path = scene_dict.get("audio_path", "")
+        for prefix in ["/artifacts/", "/local-artifacts/", "artifacts/", "local-artifacts/"]:
+            if path.startswith(prefix):
+                path = path[len(prefix):]
+        scene_dict["audio_path"] = path.lstrip("/")
+        logger.info("[group %s] Sanitized audio path → %s", group_idx, scene_dict["audio_path"])
+        sanitized_scenes.append(scene_dict)
+
+    props_dict = {"fps": 30, "width": 1920, "height": 1080, "scenes": sanitized_scenes}
+    props_path = tmp_dir / f"chunk_{group_idx}_props.json"
+    props_path.write_text(json.dumps(props_dict, indent=2))
+
+    output_path = tmp_dir / f"chunk_{group_idx}.mp4"
+
+    command = [
+        "npx", "remotion", "render",
+        "src/Root.tsx", "Whiteboard",
+        f"--props={props_path}",
+        "--concurrency=1",
+        '--chromium-flags="--no-sandbox"',
+        str(output_path),
+    ]
+    try:
+        subprocess.run(
+            command,
+            cwd=renderer_dir,
+            check=True,
+            timeout=900,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        error_msg = (
+            f"[group {group_idx}] Remotion render failed (exit {exc.returncode}).\n"
+            f"STDERR:\n{(exc.stderr or '')[-3000:]}\nSTDOUT:\n{(exc.stdout or '')[-1000:]}"
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"[group {group_idx}] Remotion render timed out after 900s") from exc
+
+    logger.info("[group %s] Chunk render complete → %s", group_idx, output_path)
+    return output_path
+
+
+def _stitch_videos_ffmpeg(chunk_videos: list[Path], output_path: Path) -> None:
+    """Concatenate chunk MP4s using FFmpeg stream-copy (no re-encode, ~5 seconds)."""
+
+    concat_list = output_path.parent / "concat_list.txt"
+    concat_list.write_text(
+        "\n".join(f"file '{v.resolve()}'" for v in chunk_videos),
+        encoding="utf-8",
+    )
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", str(concat_list),
+                "-c", "copy",
+                str(output_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"FFmpeg stitch failed: {(exc.stderr or '')[-2000:]}"
+        ) from exc
+    logger.info("FFmpeg stitch complete → %s (%.1f MB)", output_path, output_path.stat().st_size / 1e6)
+
+
+def _run_remotion_render(job_id: str, props: RenderProps) -> str:
+    """Split scenes into parallel groups, render each, stitch with FFmpeg, upload."""
+
+    # Security: validate job_id before using in paths or subprocesses
     _validate_job_id(job_id)
 
     renderer_dir = _renderer_root()
     output_filename = f"{job_id}.mp4"
-    local_output_path = renderer_dir / "runs" / output_filename
-    local_output_path.parent.mkdir(parents=True, exist_ok=True)
+    final_local_path = renderer_dir / "runs" / output_filename
+    final_local_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Write sanitized props for Remotion to read
-    # We strip the /artifacts prefix so Remotion resolves them relative to its public/ dir
-    props_path = renderer_dir / "runs" / job_id / "render_props.json"
-    props_path.parent.mkdir(parents=True, exist_ok=True)
-    
-    sanitized_props = props.model_dump()
-    for scene in sanitized_props.get("scenes", []):
-        if "audio_path" in scene and isinstance(scene["audio_path"], str):
-            path = scene["audio_path"]
-            # Remove any known prefixes and leading slashes to make it relative to 'public'
-            for prefix in ["/artifacts/", "/local-artifacts/", "artifacts/", "local-artifacts/"]:
-                if path.startswith(prefix):
-                    path = path[len(prefix):]
-            scene["audio_path"] = path.lstrip("/")
-            logger.info("Sanitized asset for render: %s", scene["audio_path"])
-    
-    props_path.write_text(json.dumps(sanitized_props, indent=2))
+    scenes = props.scenes
+    if not scenes:
+        raise ValueError("No scenes to render")
 
-    command = [
-        "npx", "remotion", "render", "src/Root.tsx", "Whiteboard",
-        f"--props=runs/{job_id}/render_props.json",
-        f"runs/{output_filename}",
-        '--chromium-flags="--no-sandbox"',
-        '--concurrency=4',
-    ]
-    
-    try:
-        with _timed_stage(job_id, "remotion_render"):
-            try:
-                subprocess.run(
-                    command,
-                    cwd=renderer_dir,
-                    check=True,
-                    timeout=3600,
-                    capture_output=True,
-                    text=True,
-                )
-            except subprocess.CalledProcessError as exc:
-                error_msg = (
-                    f"Remotion render failed with exit code {exc.returncode}.\n"
-                    f"STDERR:\n{(exc.stderr or '')[-4000:]}\n"
-                    f"STDOUT:\n{(exc.stdout or '')[-4000:]}"
-                )
-                logger.error(error_msg)
-                raise RuntimeError(error_msg) from exc
-            except subprocess.TimeoutExpired as exc:
-                error_msg = (
-                    f"Remotion render timed out after {exc.timeout}s.\n"
-                    f"STDERR:\n{(exc.stderr or '')[-4000:]}\n"
-                    f"STDOUT:\n{(exc.stdout or '')[-4000:]}"
-                )
-                logger.error(error_msg)
-                raise RuntimeError(error_msg) from exc
-        
-        # Upload final video
+    # Split scenes into sequential groups (group 0 → scenes 0..k, group 1 → scenes k+1..2k, …)
+    chunk_size = max(1, -(-len(scenes) // _N_RENDER_WORKERS))  # ceiling division
+    groups = [scenes[i: i + chunk_size] for i in range(0, len(scenes), chunk_size)]
+    logger.info(
+        "Parallel render: %s scene(s) split into %s group(s) of ≤%s",
+        len(scenes), len(groups), chunk_size,
+    )
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+
+        chunk_videos: dict[int, Path] = {}
+
+        with _timed_stage(job_id, "parallel_remotion_render"):
+            with ThreadPoolExecutor(max_workers=_N_RENDER_WORKERS) as pool:
+                futures = {
+                    pool.submit(
+                        _render_scene_group, group_idx, group_scenes, job_id, renderer_dir, tmp
+                    ): group_idx
+                    for group_idx, group_scenes in enumerate(groups)
+                    if group_scenes  # skip any empty trailing groups
+                }
+                for future in as_completed(futures):
+                    group_idx = futures[future]
+                    chunk_videos[group_idx] = future.result()  # raises on render error
+
+        # Stitch chunks in the correct scene order
+        ordered_chunks = [chunk_videos[i] for i in sorted(chunk_videos)]
+        stitch_local = tmp / "stitched.mp4"
+        with _timed_stage(job_id, "ffmpeg_stitch"):
+            _stitch_videos_ffmpeg(ordered_chunks, stitch_local)
+
+        # Upload final video using the module-level _storage singleton
         remote_path = f"runs/{output_filename}"
-        accessible_url = _storage.upload_file(local_output_path, remote_path)
-        return accessible_url
-    finally:
-        # Cleanup local artifacts
-        shutil.rmtree(props_path.parent, ignore_errors=True)
-        local_output_path.unlink(missing_ok=True)
+        with _timed_stage(job_id, "upload_final"):
+            accessible_url = _storage.upload_file(stitch_local, remote_path)
+
+    return accessible_url
 
 
 def _background_job(job_id: str, text: str, max_sc: int, render: bool) -> None:

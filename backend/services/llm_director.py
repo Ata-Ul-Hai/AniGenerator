@@ -61,6 +61,11 @@ EXAMPLE of a CORRECT scene (wallet concept):
 IMPORTANT: Every scene needs a DIFFERENT, UNIQUE illustration. Do not reuse the same SVG paths across scenes.
 Maximum __MAX_SCENES__ scenes.
 
+NARRATION LENGTH RULE:
+Each narration MUST be between 10 and __MAX_WORDS__ words.
+Do not exceed __MAX_WORDS__ words per narration under any circumstances.
+Short, punchy narrations work better than long ones for whiteboard video.
+
 INPUT TEXT:
 __EXTRACTED_TEXT__
 """.strip()
@@ -346,11 +351,12 @@ def _fallback_scenes(text_chunk: str, max_scenes: int, reason: str) -> list[Scen
     return scenes
 
 
-def _build_prompt(text_chunk: str, max_scenes: int) -> str:
+def _build_prompt(text_chunk: str, max_scenes: int, max_words_per_narration: int) -> str:
     """Construct the full director prompt with model constraints and examples."""
 
     return (
         DIRECTOR_PROMPT_TEMPLATE.replace("__MAX_SCENES__", str(max_scenes))
+        .replace("__MAX_WORDS__", str(max_words_per_narration))
         .replace("__EXTRACTED_TEXT__", text_chunk.strip())
     )
 
@@ -446,7 +452,8 @@ def _generate_with_gemini(prompt: str) -> str:
 
 def generate_scenes(
     text_chunk: str,
-    max_scenes: int = 15,
+    max_scenes: int = 8,
+    max_words_per_narration: int = 37,
 ) -> list[SceneScript]:
     """Generate validated scene scripts for a text chunk using Gemini."""
 
@@ -455,7 +462,7 @@ def generate_scenes(
     if max_scenes < 1:
         raise ValueError("max_scenes must be >= 1")
 
-    base_prompt = _build_prompt(text_chunk, max_scenes)
+    base_prompt = _build_prompt(text_chunk, max_scenes, max_words_per_narration)
 
     try:
         first_response = _generate_with_gemini(base_prompt)

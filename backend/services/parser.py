@@ -60,6 +60,58 @@ def _count_words(text: str) -> int:
     return len(text.split())
 
 
+def smart_sample_text(text: str, max_chars: int) -> str:
+    """Sample a large document to fit within max_chars while preserving coverage.
+
+    If the text is already within the limit it is returned unchanged.  Otherwise
+    40 % is taken from the start, 30 % from the middle, and 30 % from the end.
+    Each boundary is snapped to the nearest paragraph break so sentences are
+    never cut mid-way.  Sections are joined with a ``[...]`` marker so downstream
+    consumers (e.g. the LLM) know content was omitted.
+    """
+
+    if len(text) <= max_chars:
+        return text
+
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if not paragraphs:
+        return text[:max_chars]
+
+    start_budget = int(max_chars * 0.40)
+    mid_budget = int(max_chars * 0.30)
+    end_budget = max_chars - start_budget - mid_budget
+
+    def _collect_paragraphs_up_to(paras: list[str], budget: int) -> str:
+        """Greedily accumulate paragraphs until the char budget is reached."""
+        collected: list[str] = []
+        used = 0
+        for para in paras:
+            if used + len(para) + 2 > budget:
+                break
+            collected.append(para)
+            used += len(para) + 2
+        return "\n\n".join(collected)
+
+    start_section = _collect_paragraphs_up_to(paragraphs, start_budget)
+
+    mid_index = len(paragraphs) // 2
+    mid_half = mid_budget // 2
+    mid_left = mid_index
+    while mid_left > 0 and len("\n\n".join(paragraphs[mid_left:mid_index])) < mid_half:
+        mid_left -= 1
+    mid_section = _collect_paragraphs_up_to(paragraphs[mid_left:], mid_budget)
+
+    end_section = _collect_paragraphs_up_to(list(reversed(paragraphs)), end_budget)
+    end_section = "\n\n".join(reversed(end_section.split("\n\n")))
+
+    sampled = f"{start_section}\n\n[...]\n\n{mid_section}\n\n[...]\n\n{end_section}"
+    logger.info(
+        "smart_sample_text: original %s chars → sampled %s chars (budget %s)",
+        len(text), len(sampled), max_chars,
+    )
+    return sampled
+
+
 def extract_text(file_path: str, max_file_size_mb: int = 50) -> str:
     """Extract text content from PDF, DOCX, or TXT file paths."""
 
