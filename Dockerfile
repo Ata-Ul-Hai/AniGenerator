@@ -45,6 +45,15 @@ COPY scripts /app/scripts
 # Use npm ci for deterministic, reproducible installs from lockfile
 RUN npm ci --prefix /app/renderer 2>/dev/null || npm install --prefix /app/renderer
 
+# Pre-bundle the Remotion composition at build time.
+# This bakes the compiled React/TS bundle into the image so render calls skip
+# the 60-90s esbuild step that was happening on every invocation at runtime.
+RUN cd /app/renderer && \
+	NO_UPDATE_NOTIFIER=1 \
+	node_modules/.bin/remotion bundle src/Root.tsx \
+	--out /app/renderer-bundle && \
+	echo "✓ Remotion pre-bundle complete"
+
 RUN useradd --system --uid 10001 --create-home appuser \
 	&& mkdir -p /app/renderer/runs /app/renderer/public/runs \
 	&& chown -R appuser:appuser /app

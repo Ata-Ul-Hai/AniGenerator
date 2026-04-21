@@ -341,8 +341,6 @@ def _generate_render_props_internal(
 
 # ── PARALLEL RENDER HELPERS ───────────────────────────────────────────────────
 
-_N_RENDER_WORKERS = 4  # matches the 4 vCPUs on Cloud Run
-
 
 def _render_scene_group(
     group_idx: int,
@@ -350,13 +348,13 @@ def _render_scene_group(
     job_id: str,
     renderer_dir: Path,
     tmp_dir: Path,
+    concurrency: int = 1,
 ) -> Path:
     """Render one group of scenes as a single chunk MP4.
 
-    Each group runs in its own process with --concurrency=1 so the four
-    parallel renders each get a dedicated vCPU without fighting each other.
-    Audio paths are sanitized here (mirrors the logic from the old single render)
-    so Remotion can resolve them relative to its public/ directory.
+    In production (Docker image), uses the pre-built Remotion bundle via
+    render_worker.mjs — no esbuild at runtime.  Falls back to the CLI binary
+    for local development where the bundle has not been pre-compiled.
     """
 
     sanitized_scenes: list[dict] = []
@@ -376,16 +374,43 @@ def _render_scene_group(
 
     output_path = tmp_dir / f"chunk_{group_idx}.mp4"
 
-    command = [
-        "node_modules/.bin/remotion", "render",
-        "src/Root.tsx", "Whiteboard",
-        f"--props={props_path}",
-        "--concurrency=1",
-        "--chromium-flags=--no-sandbox",
-        "--browser-executable-path=/usr/bin/chromium",
-        str(output_path),
-    ]
-    render_env = {**os.environ, "NO_UPDATE_NOTIFIER": "1", "npm_config_update_notifier": "false"}
+    # Detect whether the pre-built bundle is available (production) or not (local dev)
+    bundle_dir = renderer_dir.parent / "renderer-bundle"
+    use_worker = bundle_dir.exists()
+
+    if use_worker:
+        logger.info("[group %s] Using pre-built bundle at %s (concurrency=%s)", group_idx, bundle_dir, concurrency)
+        render_env = {
+            **os.environ,
+            "NO_UPDATE_NOTIFIER": "1",
+            "npm_config_update_notifier": "false",
+            "REMOTION_BUNDLE_DIR": str(bundle_dir),
+            "REMOTION_CHROMIUM_PATH": "/usr/bin/chromium",
+            "REMOTION_CONCURRENCY": str(concurrency),
+        }
+        command = [
+            "node",
+            str(renderer_dir / "render_worker.mjs"),
+            str(props_path),
+            str(output_path),
+        ]
+    else:
+        logger.info("[group %s] No pre-built bundle found — using CLI fallback (concurrency=%s)", group_idx, concurrency)
+        render_env = {
+            **os.environ,
+            "NO_UPDATE_NOTIFIER": "1",
+            "npm_config_update_notifier": "false",
+        }
+        command = [
+            "node_modules/.bin/remotion", "render",
+            "src/Root.tsx", "Whiteboard",
+            f"--props={props_path}",
+            f"--concurrency={concurrency}",
+            "--chromium-flags=--no-sandbox",
+            "--browser-executable-path=/usr/bin/chromium",
+            str(output_path),
+        ]
+
     try:
         subprocess.run(
             command,
@@ -440,7 +465,13 @@ def _stitch_videos_ffmpeg(chunk_videos: list[Path], output_path: Path) -> None:
 
 
 def _run_remotion_render(job_id: str, props: RenderProps) -> str:
-    """Split scenes into parallel groups, render each, stitch with FFmpeg, upload."""
+    """Split scenes into parallel groups, render each, stitch with FFmpeg, upload.
+
+    Group count and concurrency-per-group are chosen dynamically:
+      ≤ 3 scenes → 1 group,  concurrency = scenes (fewest bundle operations)
+      4-5 scenes → 2 groups, concurrency = 2 each
+      6-8 scenes → 4 groups, concurrency = 1 each
+    """
 
     # Security: validate job_id before using in paths or subprocesses
     _validate_job_id(job_id)
@@ -454,12 +485,20 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
     if not scenes:
         raise ValueError("No scenes to render")
 
-    # Split scenes into sequential groups (group 0 → scenes 0..k, group 1 → scenes k+1..2k, …)
-    chunk_size = max(1, -(-len(scenes) // _N_RENDER_WORKERS))  # ceiling division
-    groups = [scenes[i: i + chunk_size] for i in range(0, len(scenes), chunk_size)]
+    # Dynamic group sizing: fewer groups = fewer bundle/Chromium startup operations
+    n = len(scenes)
+    if n <= 3:
+        n_groups, concurrency_per_group = 1, min(n, 4)
+    elif n <= 5:
+        n_groups, concurrency_per_group = 2, 2
+    else:
+        n_groups, concurrency_per_group = 4, 1
+
+    chunk_size = max(1, -(-n // n_groups))  # ceiling division
+    groups = [scenes[i: i + chunk_size] for i in range(0, n, chunk_size)]
     logger.info(
-        "Parallel render: %s scene(s) split into %s group(s) of ≤%s",
-        len(scenes), len(groups), chunk_size,
+        "Render strategy: %s scene(s) → %s group(s) × concurrency=%s",
+        n, n_groups, concurrency_per_group,
     )
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -468,10 +507,11 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
         chunk_videos: dict[int, Path] = {}
 
         with _timed_stage(job_id, "parallel_remotion_render"):
-            with ThreadPoolExecutor(max_workers=_N_RENDER_WORKERS) as pool:
+            with ThreadPoolExecutor(max_workers=n_groups) as pool:
                 futures = {
                     pool.submit(
-                        _render_scene_group, group_idx, group_scenes, job_id, renderer_dir, tmp
+                        _render_scene_group,
+                        group_idx, group_scenes, job_id, renderer_dir, tmp, concurrency_per_group,
                     ): group_idx
                     for group_idx, group_scenes in enumerate(groups)
                     if group_scenes  # skip any empty trailing groups
