@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -376,7 +377,7 @@ def _render_scene_group(
     output_path = tmp_dir / f"chunk_{group_idx}.mp4"
 
     command = [
-        "npx", "remotion", "render",
+        "node_modules/.bin/remotion", "render",
         "src/Root.tsx", "Whiteboard",
         f"--props={props_path}",
         "--concurrency=1",
@@ -384,6 +385,7 @@ def _render_scene_group(
         "--browser-executable-path=/usr/bin/chromium",
         str(output_path),
     ]
+    render_env = {**os.environ, "NO_UPDATE_NOTIFIER": "1", "npm_config_update_notifier": "false"}
     try:
         subprocess.run(
             command,
@@ -392,6 +394,7 @@ def _render_scene_group(
             timeout=900,
             capture_output=True,
             text=True,
+            env=render_env,
         )
     except subprocess.CalledProcessError as exc:
         error_msg = (
