@@ -485,14 +485,12 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
     if not scenes:
         raise ValueError("No scenes to render")
 
-    # Dynamic group sizing: fewer groups = fewer bundle/Chromium startup operations
+    # Always 4 groups × concurrency=1: logs prove 3 isolated single-tab Chrome
+    # processes (for 5 scenes) outperform 2 multi-tab processes on 4 vCPUs.
+    # More independent processes = better CPU utilization on Cloud Run.
     n = len(scenes)
-    if n <= 3:
-        n_groups, concurrency_per_group = 1, min(n, 4)
-    elif n <= 5:
-        n_groups, concurrency_per_group = 2, 2
-    else:
-        n_groups, concurrency_per_group = 4, 1
+    n_groups = 4
+    concurrency_per_group = 1
 
     chunk_size = max(1, -(-n // n_groups))  # ceiling division
     groups = [scenes[i: i + chunk_size] for i in range(0, n, chunk_size)]
