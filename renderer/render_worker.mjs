@@ -18,7 +18,7 @@
  *   REMOTION_CONCURRENCY     Number of parallel browser tabs (default: 1)
  */
 
-import { selectComposition, renderMedia } from '@remotion/renderer';
+import { renderMedia } from '@remotion/renderer';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -51,23 +51,30 @@ process.stderr.write(
   `[render_worker] bundle=${bundleDir} concurrency=${concurrency} output=${outputPath}\n`
 );
 
-// ── Detect composition (auto-resolves durationInFrames from props) ────────────
-const composition = await selectComposition({
-  serveUrl: bundleDir,
-  id: 'Whiteboard',
-  inputProps: props,
-  chromiumOptions: { disableSandbox: true },
-  browserExecutable,
-  timeoutInMilliseconds: 60_000,
-});
+// ── Compute duration locally (mirrors estimateDuration in Root.tsx) ───────────
+// This eliminates the selectComposition() browser-launch overhead (~25-40s saved).
+const TRANSITION_MS = 450;
+const totalMs = props.scenes.reduce(
+  (sum, s) => sum + (s.audio_duration_ms ?? 0) + TRANSITION_MS,
+  0
+);
+const fps = props.fps || 30;
+const durationInFrames = Math.max(90, Math.ceil((totalMs / 1000) * fps));
 
 process.stderr.write(
-  `[render_worker] composition ready: ${composition.durationInFrames} frames @ ${composition.fps}fps\n`
+  `[render_worker] ${props.scenes.length} scenes → ${durationInFrames} frames @ ${fps}fps\n`
 );
 
 // ── Render ───────────────────────────────────────────────────────────────────
 await renderMedia({
-  composition,
+  composition: {
+    id: 'Whiteboard',
+    durationInFrames,
+    fps,
+    width: props.width || 1920,
+    height: props.height || 1080,
+    defaultProps: {},
+  },
   serveUrl: bundleDir,
   codec: 'h264',
   outputLocation: outputPath,

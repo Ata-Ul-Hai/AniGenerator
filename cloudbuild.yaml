@@ -23,9 +23,11 @@ steps:
       '--allow-unauthenticated',
       '--timeout', '3600',
       '--max-instances', '1',
+      '--min-instances', '1',
       '--memory', '8Gi',
       '--cpu', '4',
       '--no-cpu-throttling',
+      '--execution-environment', 'gen2',
       '--set-env-vars', 'APP_ENV=production,GOOGLE_CLOUD_PROJECT=$PROJECT_ID',
       '--add-cloudsql-instances', '$PROJECT_ID:europe-west1:anigen-db'
     ]
