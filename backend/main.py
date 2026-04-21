@@ -381,6 +381,7 @@ def _render_scene_group(
         f"--props={props_path}",
         "--concurrency=1",
         "--chromium-flags=--no-sandbox",
+        "--browser-executable-path=/usr/bin/chromium",
         str(output_path),
     ]
     try:
