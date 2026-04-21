@@ -267,9 +267,9 @@ def _generate_render_props_internal(
 
     # ── GUARDRAIL 1: minimum content check, auto-reduce scenes if doc too thin ─
     word_count = len(extracted_text.split())
-    min_required_words = max_scenes * 80
+    min_required_words = max_scenes * 30   # 30 source words/scene is the realistic floor
     if word_count < min_required_words:
-        adjusted = max(1, word_count // 80)
+        adjusted = max(1, word_count // 30)
         logger.warning(
             "Content too thin (%s words) for %s scenes. Auto-reducing to %s scenes.",
             word_count, max_scenes, adjusted,
@@ -380,7 +380,7 @@ def _render_scene_group(
         "src/Root.tsx", "Whiteboard",
         f"--props={props_path}",
         "--concurrency=1",
-        '--chromium-flags="--no-sandbox"',
+        "--chromium-flags=--no-sandbox",
         str(output_path),
     ]
     try:
