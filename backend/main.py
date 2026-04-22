@@ -374,42 +374,20 @@ def _render_scene_group(
 
     output_path = tmp_dir / f"chunk_{group_idx}.mp4"
 
-    # Detect whether the pre-built bundle is available (production) or not (local dev)
-    bundle_dir = renderer_dir.parent / "renderer-bundle"
-    use_worker = bundle_dir.exists()
-
-    if use_worker:
-        logger.info("[group %s] Using pre-built bundle at %s (concurrency=%s)", group_idx, bundle_dir, concurrency)
-        render_env = {
-            **os.environ,
-            "NO_UPDATE_NOTIFIER": "1",
-            "npm_config_update_notifier": "false",
-            "REMOTION_BUNDLE_DIR": str(bundle_dir),
-            "REMOTION_CHROMIUM_PATH": "/usr/bin/chromium",
-            "REMOTION_CONCURRENCY": str(concurrency),
-        }
-        command = [
-            "node",
-            str(renderer_dir / "render_worker.mjs"),
-            str(props_path),
-            str(output_path),
-        ]
-    else:
-        logger.info("[group %s] No pre-built bundle found — using CLI fallback (concurrency=%s)", group_idx, concurrency)
-        render_env = {
-            **os.environ,
-            "NO_UPDATE_NOTIFIER": "1",
-            "npm_config_update_notifier": "false",
-        }
-        command = [
-            "node_modules/.bin/remotion", "render",
-            "src/Root.tsx", "Whiteboard",
-            f"--props={props_path}",
-            f"--concurrency={concurrency}",
-            "--chromium-flags=--no-sandbox",
-            "--browser-executable-path=/usr/bin/chromium",
-            str(output_path),
-        ]
+    render_env = {
+        **os.environ,
+        "NO_UPDATE_NOTIFIER": "1",
+        "npm_config_update_notifier": "false",
+    }
+    command = [
+        "node_modules/.bin/remotion", "render",
+        "src/Root.tsx", "Whiteboard",
+        f"--props={props_path}",
+        f"--concurrency={concurrency}",
+        "--chromium-flags=--no-sandbox",
+        "--browser-executable-path=/usr/bin/chromium",
+        str(output_path),
+    ]
 
     try:
         subprocess.run(
