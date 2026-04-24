@@ -1,5 +1,5 @@
 import React, {useMemo} from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
+import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
 
 type SvgDrawerProps = {
   svgContent: string;
@@ -56,9 +56,25 @@ const elementProgress = (global: number, index: number, total: number): number =
   return Math.max(0, Math.min(1, (global - start) / Math.max(0.001, end - start)));
 };
 
-type AnimatedPathProps = {node: PathNode; drawProgress: number; index: number; total: number};
-const AnimatedPath: React.FC<AnimatedPathProps> = ({node, drawProgress, index, total}) => {
-  const progress = elementProgress(drawProgress, index, total);
+type AnimatedPathProps = {
+  node: PathNode;
+  drawDurationFrames: number;
+  index: number;
+  total: number;
+};
+const AnimatedPath: React.FC<AnimatedPathProps> = ({node, drawDurationFrames, index, total}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  
+  // Staggered spring per element
+  const elementDelay = (index / total) * drawDurationFrames * 0.6;
+  const elementSpring = spring({
+    fps,
+    frame: Math.max(0, frame - elementDelay),
+    config: {damping: 180, stiffness: 80, mass: 0.6},
+  });
+  const progress = Math.min(1, elementSpring);
+
   const {stroke = '#1a1a1a', 'stroke-width': sw = '3', 'stroke-linecap': slc = 'round',
     'stroke-linejoin': slj = 'round', fill: _f, style: _s, class: _c, ...rest} = node.attrs;
 
@@ -77,13 +93,32 @@ const AnimatedPath: React.FC<AnimatedPathProps> = ({node, drawProgress, index, t
   return <polygon pathLength={1} style={style} {...rest} />;
 };
 
-type AnimatedFillProps = {node: FillNode; fillProgress: number; index: number; total: number};
-const AnimatedFill: React.FC<AnimatedFillProps> = ({node, fillProgress, index, total}) => {
-  const progress = elementProgress(fillProgress, index, total);
+type AnimatedFillProps = {
+  node: FillNode;
+  drawDurationFrames: number;
+  index: number;
+  total: number;
+};
+const AnimatedFill: React.FC<AnimatedFillProps> = ({node, drawDurationFrames, index, total}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+  
+  const fillStart = drawDurationFrames * 0.4;
+  const elementDelay = fillStart + (index / total) * (drawDurationFrames * 0.6);
+  const elementSpring = spring({
+    fps,
+    frame: Math.max(0, frame - elementDelay),
+    config: {damping: 180, stiffness: 80, mass: 0.6},
+  });
+  const progress = Math.min(1, elementSpring);
+
   const {stroke = '#1a1a1a', 'stroke-width': sw = '3', fill: _f, style: _s, class: _c, ...rest} = node.attrs;
   const style: React.CSSProperties = {
-    fill: 'none', stroke, strokeWidth: Number(sw) || 3,
-    strokeOpacity: progress, fillOpacity: 0,
+    fill: `rgba(236, 236, 234, ${progress * 0.18})`,
+    fillOpacity: progress,
+    stroke,
+    strokeWidth: Number(sw) || 3,
+    strokeOpacity: progress,
   };
   if (node.kind === 'rect') return <rect style={style} {...rest} />;
   if (node.kind === 'circle') return <circle style={style} {...rest} />;
@@ -102,6 +137,7 @@ const AnimatedText: React.FC<AnimatedTextProps> = ({node, textProgress}) => {
 
 export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFrames, sceneDurationFrames}) => {
   const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
 
   const allNodes = useMemo(() => parseSvgNodes(svgContent || ''), [svgContent]);
   const viewBox = useMemo(() => extractViewBox(svgContent || ''), [svgContent]);
@@ -112,30 +148,39 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
     n.kind === 'rect' || n.kind === 'circle' || n.kind === 'ellipse'), [allNodes]);
   const textNodes = useMemo(() => allNodes.filter((n): n is TextNode => n.kind === 'text'), [allNodes]);
 
-  const drawProgress = interpolate(frame, [0, Math.max(1, drawDurationFrames)], [0, 1], {extrapolateRight: 'clamp'});
-  const fillProgress = interpolate(frame,
-    [Math.max(0, drawDurationFrames * 0.4), Math.max(1, drawDurationFrames * 1.1)],
-    [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
   const textProgress = interpolate(frame,
     [Math.max(0, drawDurationFrames * 0.8), Math.max(1, drawDurationFrames * 1.3)],
     [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+    
+  const entranceSpring = spring({fps, frame, config: {damping: 160, stiffness: 70}});
   const sceneOpacity = interpolate(frame,
     [0, 8, Math.max(9, sceneDurationFrames - 12), sceneDurationFrames],
     [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
 
   return (
-    <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', opacity: sceneOpacity,
-      transform: `scale(${0.97 + drawProgress * 0.03})`}}>
-      <div style={{background: 'linear-gradient(145deg, rgba(255,255,255,0.97), rgba(243,247,252,0.85))',
-        border: '1.5px solid rgba(13,47,99,0.12)', borderRadius: 28, padding: '36px 44px',
-        boxShadow: '0 24px 72px rgba(14,33,62,0.18)', display: 'flex',
-        alignItems: 'center', justifyContent: 'center'}}>
+    <AbsoluteFill style={{
+      justifyContent: 'center',
+      alignItems: 'center',
+      opacity: sceneOpacity * Math.min(1, entranceSpring),
+      transform: `scale(${0.97 + entranceSpring * 0.03}) translateY(${(1 - entranceSpring) * 16}px)`
+    }}>
+      <div style={{
+        background: 'rgba(255,255,255,0.96)',
+        border: '1px solid rgba(0,0,0,0.08)',
+        borderRadius: 20,
+        padding: '36px 44px',
+        boxShadow: '0 12px 40px rgba(0,0,0,0.12)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
         <svg viewBox={viewBox} xmlns="http://www.w3.org/2000/svg"
+          preserveAspectRatio="xMidYMid meet"
           style={{width: 'min(62vw, 1080px)', height: 'min(55vh, 620px)', overflow: 'visible'}}>
           {fillNodes.map((node, i) =>
-            <AnimatedFill key={`fill-${i}`} node={node} fillProgress={fillProgress} index={i} total={fillNodes.length} />)}
+            <AnimatedFill key={`fill-${i}`} node={node} drawDurationFrames={drawDurationFrames} index={i} total={fillNodes.length} />)}
           {pathNodes.map((node, i) =>
-            <AnimatedPath key={`path-${i}`} node={node} drawProgress={drawProgress} index={i} total={pathNodes.length} />)}
+            <AnimatedPath key={`path-${i}`} node={node} drawDurationFrames={drawDurationFrames} index={i} total={pathNodes.length} />)}
           {textNodes.map((node, i) =>
             <AnimatedText key={`text-${i}`} node={node} textProgress={textProgress} />)}
         </svg>

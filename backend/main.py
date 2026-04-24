@@ -36,6 +36,7 @@ from backend.services.audio_gen import synthesize
 from backend.services.llm_director import generate_scenes
 from backend.services.parser import chunk_text, extract_text, smart_sample_text
 from backend.services.storage_service import get_storage_provider
+from backend.services.icon_fetcher import fetch_icon_svg, keyword_from_hint, normalize_svg
 
 logging.basicConfig(
     level=logging.INFO,
@@ -239,17 +240,38 @@ def _synthesize_scene_choreography(
     # Upload to GCS/Local and get the accessible URL
     accessible_url = _storage.upload_file(audio_abs_path, remote_path)
     
-    draw_duration_ms = int(min(2000, duration_ms * 0.4))
+    # Fetch and normalize icon SVG
+    settings = get_settings()
+    keyword = keyword_from_hint(scene.metaphor_hint)
+    raw_svg = fetch_icon_svg(keyword, settings.iconify_base_url)
+
+    if raw_svg:
+        svg_content = normalize_svg(raw_svg)
+    else:
+        # Fall back to existing hardcoded template
+        from backend.services.llm_director import _choose_fallback_template, _fallback_svg_markup
+        template = _choose_fallback_template(scene.narration, scene.scene_id, None)
+        svg_content = _fallback_svg_markup(template, scene.scene_id)
+
+    # Calculate dynamic draw duration based on SVG complexity
+    element_count = (
+        svg_content.count('<path') + svg_content.count('<circle') +
+        svg_content.count('<rect') + svg_content.count('<line') +
+        svg_content.count('<polyline') + svg_content.count('<ellipse')
+    )
+    element_factor = min(1.0, element_count / 12)
+    # Scales: 17.5%–35% of audio duration based on icon complexity
+    draw_duration_ms = int(duration_ms * 0.35 * (0.5 + 0.5 * element_factor))
     hold_ms = max(0, duration_ms - draw_duration_ms)
 
     return SceneChoreography(
         scene_id=scene.scene_id,
         narration=scene.narration,
-        svg_markup=scene.svg_markup,
+        svg_markup=svg_content,
         metaphor_hint=scene.metaphor_hint,
         audio_path=accessible_url,
         svg_path=f"inline://scene_{scene.scene_id}.svg",
-        svg_content=scene.svg_markup,
+        svg_content=svg_content,
         audio_duration_ms=duration_ms,
         draw_start_ms=0,
         draw_duration_ms=draw_duration_ms,

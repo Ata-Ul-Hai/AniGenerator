@@ -30,13 +30,13 @@ export const Subtitles: React.FC<SubtitlesProps> = ({narration, sceneDurationFra
     >
       <div
         style={{
-          background: 'rgba(10, 20, 31, 0.78)',
+          background: 'rgba(15, 20, 30, 0.72)',
           border: '1px solid rgba(255,255,255,0.35)',
           borderRadius: 26,
           padding: '24px 30px',
           color: '#f7f4ed',
-          fontFamily: '"Spectral", Georgia, serif',
-          fontSize: 42,
+          fontFamily: '"Inter", "Segoe UI", sans-serif',
+          fontSize: 38,
           lineHeight: 1.28,
           boxShadow: '0 24px 48px rgba(8, 13, 20, 0.35)',
         }}
