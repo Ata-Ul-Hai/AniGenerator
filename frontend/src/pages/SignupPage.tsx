@@ -15,7 +15,16 @@ const SignupPage: React.FC = () => {
       setSuccess(true);
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Signup failed');
+      let msg = 'Signup failed';
+      if (err.response?.status === 422) {
+        const detail = err.response.data.detail;
+        msg = Array.isArray(detail) 
+          ? detail.map((d: any) => d.msg).join(', ') 
+          : detail;
+      } else {
+        msg = err.response?.data?.detail || msg;
+      }
+      setError(msg);
     }
   };
 

@@ -45,6 +45,14 @@ def update_user_beta_access(db: Session, user_id: int, authorized: bool) -> User
         db.refresh(user)
     return user
 
+def delete_user(db: Session, user_id: int) -> bool:
+    user = db.get(User, user_id)
+    if user:
+        db.delete(user)
+        db.commit()
+        return True
+    return False
+
 def mark_user_onboarded(db: Session, user_id: int) -> None:
     user = db.get(User, user_id)
     if user:
@@ -131,6 +139,14 @@ def set_job_failed(db: Session, job_id: str, error: str) -> None:
     job.error = error
     job.updated_at = datetime.now(timezone.utc)
     db.commit()
+
+
+def update_job_status(db: Session, job_id: str, status: str) -> None:
+    job = db.get(Job, job_id)
+    if job:
+        job.status = status
+        job.updated_at = datetime.now(timezone.utc)
+        db.commit()
 
 
 # ── Scenes ────────────────────────────────────────────────────────────────────

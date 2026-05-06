@@ -18,6 +18,9 @@ from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/user", tags=["user"])
 
+from typing import Literal
+from backend.core.schemas import RenderProps, SceneChoreography
+
 class UploadResponse(BaseModel):
     extracted_text: str
     chunk_count: int
@@ -25,6 +28,17 @@ class UploadResponse(BaseModel):
 class GenerateRequest(BaseModel):
     extracted_text: str = Field(..., min_length=1)
     max_scenes: int | None = Field(default=None, ge=1, le=8)
+
+JobStatus = Literal["queued", "running", "rendering", "completed", "failed"]
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: JobStatus
+    created_at: str
+    updated_at: str
+    error: str | None = None
+    render_props: RenderProps | None = None
+    video_path: str | None = None
 
 @router.post("/upload", response_model=UploadResponse)
 def upload(
@@ -77,6 +91,48 @@ def generate(
     start_background_job(job_id, current_user.id, request.extracted_text, request.max_scenes or 8, True)
     
     return {"job_id": job_id, "status": "queued"}
+
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_beta_authorized),
+):
+    """Poll job status for the current user."""
+    job = crud.get_job(db, job_id)
+    if not job or job.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    # Reconstruct props from DB scenes
+    scenes = crud.get_scenes(db, job_id)
+    props = None
+    if scenes:
+        props = RenderProps(scenes=[
+            SceneChoreography(
+                scene_id=int(s.scene_index),
+                narration=s.narration,
+                svg_markup=s.svg_markup,
+                metaphor_hint=s.metaphor_hint,
+                audio_path=s.audio_path,
+                svg_path=f"inline://scene_{s.scene_index}.svg",
+                svg_content=s.svg_markup,
+                audio_duration_ms=int(s.audio_duration_ms or 0),
+                draw_duration_ms=int(s.draw_duration_ms or 0),
+                draw_start_ms=0,
+                hold_ms=int((s.audio_duration_ms or 0) - (s.draw_duration_ms or 0))
+            ) for s in scenes
+        ])
+
+    video = crud.get_video(db, job_id)
+    return JobStatusResponse(
+        job_id=job.id,
+        status=job.status,
+        created_at=job.created_at.isoformat(),
+        updated_at=job.updated_at.isoformat(),
+        error=job.error,
+        render_props=props,
+        video_path=video.file_path if video else None
+    )
 
 @router.post("/mark-onboarded")
 def mark_onboarded(

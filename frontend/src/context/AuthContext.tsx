@@ -3,11 +3,11 @@ import api from '../api/api';
 
 interface User {
   id: number;
-  username: str;
-  email: str;
-  is_admin: bool;
-  is_beta_authorized: bool;
-  has_seen_onboarding: bool;
+  username: string;
+  email: string;
+  is_admin: boolean;
+  is_beta_authorized: boolean;
+  has_seen_onboarding: boolean;
 }
 
 interface AuthContextType {
@@ -27,7 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const response = await api.get('/auth/me');
       setUser(response.data);
-    } catch (error) {
+    } catch {
       setUser(null);
     } finally {
       setLoading(false);
@@ -37,9 +37,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       await api.post('/auth/logout');
-      setUser(null);
     } catch (error) {
       console.error('Logout failed', error);
+    } finally {
+      setUser(null);
     }
   };
 

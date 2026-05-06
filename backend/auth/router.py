@@ -6,15 +6,16 @@ from sqlalchemy.orm import Session
 
 from backend.auth.security import create_access_token, get_password_hash, verify_password
 from backend.auth.jwt import get_current_user
+from backend.core.config import get_settings
 from backend.db.database import get_db
 from backend.db.models import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 class UserCreate(BaseModel):
-    username: str = Field(..., min_length=3, max_length=64)
+    username: str = Field(..., min_length=3, max_length=64, description="Username must be 3-64 characters")
     email: EmailStr
-    password: str = Field(..., min_length=8)
+    password: str = Field(..., min_length=8, description="Password must be at least 8 characters")
 
 class UserRead(BaseModel):
     id: int
@@ -67,12 +68,14 @@ def login(
     
     token = create_access_token(subject=user.username)
     
+    settings = get_settings()
+    
     # Set the 'Defensible' Cookie
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=True, # Should be True in prod (HTTPS)
+        secure=settings.app_env.lower() == "production", # Only secure in production
         samesite="lax",
         max_age=3600 * 24 * 7 # 1 week
     )

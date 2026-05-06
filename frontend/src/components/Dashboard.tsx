@@ -13,7 +13,7 @@ interface Props {
   onLogout: () => void;
 }
 
-type JobStatus = "queued" | "running" | "completed" | "failed";
+type JobStatus = "queued" | "running" | "rendering" | "completed" | "failed";
 
 interface JobState {
   job_id: string;
@@ -222,6 +222,14 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
           <h1 className="text-sm font-bold tracking-tight">AniGenerator <span className="text-accent-blue text-[10px] bg-accent-blue/10 px-1.5 py-0.5 rounded ml-2 font-bold uppercase tracking-widest">v1.5 Beta</span></h1>
         </div>
         <div className="flex items-center gap-4">
+          {user?.is_admin && (
+            <button 
+              onClick={() => window.location.href = '/admin'}
+              className="flex items-center gap-2 px-3 py-1 bg-accent-blue/10 border border-accent-blue/20 rounded-full text-[10px] uppercase tracking-wider text-accent-blue font-bold hover:bg-accent-blue/20 transition-colors"
+            >
+              Admin Console
+            </button>
+          )}
           <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] uppercase tracking-wider text-zinc-500 font-bold">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Active Mode: Local/Docker
@@ -339,16 +347,18 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
               <div className={cn(
                 "w-10 h-10 rounded-xl flex items-center justify-center border transition-all",
                 isError ? "bg-red-500/10 border-red-500/20" : 
-                job?.status === "running" ? "bg-accent-blue/10 border-accent-blue/20 animate-pulse shadow-glow-blue" : "bg-white/5 border-white/10"
+                job?.status === "running" || job?.status === "rendering" ? "bg-accent-blue/10 border-accent-blue/20 animate-pulse shadow-glow-blue" : "bg-white/5 border-white/10"
               )}>
                 {isError ? <AlertCircle size={20} className="text-red-500" /> : 
-                 job?.status === "running" ? <RefreshCw size={20} className="text-accent-blue animate-spin" /> : 
+                 job?.status === "running" || job?.status === "rendering" ? <RefreshCw size={20} className="text-accent-blue animate-spin" /> : 
                  <BarChart3 size={20} className="text-zinc-600" />}
               </div>
               <div className="space-y-0.5">
                 <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Pipeline Observer</p>
                 <p className={cn("text-xs font-bold transition-all", isError ? "text-red-400" : "text-white")}>
-                  {statusMsg || "Standby - Waiting for document ingestion"}
+                  {job?.status === "rendering" ? "Rendering video artifacts..." : 
+                   job?.status === "running" ? "Composing scenes with LLM..." :
+                   statusMsg || "Standby - Waiting for document ingestion"}
                 </p>
               </div>
             </div>

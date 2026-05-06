@@ -62,6 +62,26 @@ def approve_user(
         raise HTTPException(status_code=404, detail="User not found")
     return {"status": "ok", "is_beta_authorized": user.is_beta_authorized}
 
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin)
+):
+    """Permanently delete a user. Cannot delete self or other admins."""
+    target_user = db.get(User, user_id)
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if target_user.is_admin:
+        raise HTTPException(status_code=403, detail="Cannot delete administrative accounts")
+    
+    if target_user.id == admin.id:
+        raise HTTPException(status_code=403, detail="Self-deletion is prohibited")
+    
+    crud.delete_user(db, user_id)
+    return {"status": "ok", "message": "User deleted successfully"}
+
 @router.post("/users/create", response_model=UserResponse)
 def create_user_direct(
     request: UserCreateAdmin,

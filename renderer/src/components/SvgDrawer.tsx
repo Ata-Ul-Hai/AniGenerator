@@ -15,7 +15,7 @@ type ParsedNode = PathNode | FillNode;
 
 const parseAttrs = (attrStr: string): ParsedAttr => {
   const result: ParsedAttr = {};
-  const re = /([\w-]+)\s*=\s*(? ("([^"]*)"|'([^']*)')/g;
+  const re = /([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(attrStr)) !== null) {
     result[m[1]] = m[2] ?? m[3] ?? '';

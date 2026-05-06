@@ -43,12 +43,24 @@ const AdminPanel: React.FC = () => {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/admin/users', newUser);
+      await api.post('/admin/users/create', newUser);
       setShowCreateModal(false);
       setNewUser({ username: '', password: '', email: '' });
       await fetchData();
-    } catch (err) {
-      alert('Failed to create user');
+    } catch (err: any) {
+      let msg = 'Failed to create user';
+      if (err.response?.status === 422) {
+        // Handle Pydantic validation errors
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          msg = detail.map((d: any) => `${d.loc[d.loc.length - 1]}: ${d.msg}`).join('\n');
+        } else {
+          msg = detail;
+        }
+      } else {
+        msg = err.response?.data?.detail || msg;
+      }
+      alert(msg);
     }
   };
 
@@ -66,6 +78,22 @@ const AdminPanel: React.FC = () => {
     }
   };
 
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<User | null>(null);
+
+  const handleDeleteUser = async () => {
+    if (!deleteConfirmUser) return;
+    setActionLoading(deleteConfirmUser.id);
+    try {
+      await api.delete(`/admin/users/${deleteConfirmUser.id}`);
+      setDeleteConfirmUser(null);
+      await fetchData();
+    } catch (err) {
+      alert('Delete failed');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -76,6 +104,34 @@ const AdminPanel: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-black text-white p-8">
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmUser && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-sm w-full shadow-2xl text-center">
+            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <X size={32} />
+            </div>
+            <h2 className="text-xl font-bold mb-2">Delete User?</h2>
+            <p className="text-zinc-500 text-sm mb-8">
+              Are you sure you want to permanently delete <span className="text-white font-bold">{deleteConfirmUser.username}</span>? This action cannot be undone.
+            </p>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setDeleteConfirmUser(null)}
+                className="flex-1 py-3 bg-zinc-800 text-white rounded-xl hover:bg-zinc-700 transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleDeleteUser}
+                className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors text-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Create User Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -138,9 +194,17 @@ const AdminPanel: React.FC = () => {
             <h1 className="text-4xl font-bold tracking-tight">Admin Console</h1>
             <p className="text-zinc-500 mt-2">Manage beta access and monitor system health.</p>
           </div>
-          <button onClick={logout} className="px-6 py-2 bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 transition-colors">
-            Logout
-          </button>
+          <div className="flex gap-4">
+            <button 
+              onClick={() => window.location.href = '/dashboard'}
+              className="px-6 py-2 bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 transition-colors text-zinc-400 hover:text-white"
+            >
+              Switch to User View
+            </button>
+            <button onClick={logout} className="px-6 py-2 bg-zinc-900 border border-zinc-800 rounded-lg hover:bg-zinc-800 transition-colors">
+              Logout
+            </button>
+          </div>
         </header>
 
         {/* Stats Grid */}
@@ -217,17 +281,31 @@ const AdminPanel: React.FC = () => {
                       {new Date(u.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => handleToggleAuth(u.id, u.is_beta_authorized)}
-                        disabled={actionLoading === u.id}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                          u.is_beta_authorized 
-                          ? 'bg-zinc-800 text-red-400 hover:bg-red-500 hover:text-white' 
-                          : 'bg-white text-black hover:bg-zinc-200'
-                        }`}
-                      >
-                        {actionLoading === u.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : (u.is_beta_authorized ? 'Revoke' : 'Approve')}
-                      </button>
+                      <div className="flex justify-end gap-2">
+                        {!(u.is_admin) && (
+                          <button 
+                            onClick={() => handleToggleAuth(u.id, u.is_beta_authorized)}
+                            disabled={actionLoading === u.id}
+                            className={`px-4 py-2 rounded-lg text-xs font-bold transition-all ${
+                              u.is_beta_authorized 
+                              ? 'bg-zinc-800 text-red-400 hover:bg-red-500 hover:text-white' 
+                              : 'bg-white text-black hover:bg-zinc-200'
+                            }`}
+                          >
+                            {actionLoading === u.id ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : (u.is_beta_authorized ? 'Revoke' : 'Approve')}
+                          </button>
+                        )}
+                        {!(u.is_admin) && (
+                          <button 
+                            onClick={() => setDeleteConfirmUser(u)}
+                            disabled={actionLoading === u.id}
+                            className="p-2 bg-zinc-800 text-zinc-500 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-all"
+                            title="Delete User"
+                          >
+                            <X size={16} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

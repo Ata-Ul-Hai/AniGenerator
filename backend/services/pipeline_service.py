@@ -145,9 +145,16 @@ def _render_scene_group(
     tmp_dir: Path,
     concurrency: int = 1,
 ) -> Path:
+    """Render one group of scenes as a single chunk MP4."""
     sanitized_scenes: list[dict] = []
     for scene in scenes:
         scene_dict = scene.model_dump()
+        path = scene_dict.get("audio_path", "")
+        # Strip prefixes so Remotion finds them in public/
+        for prefix in ["/artifacts/", "/local-artifacts/", "artifacts/", "local-artifacts/"]:
+            if path.startswith(prefix):
+                path = path[len(prefix):]
+        scene_dict["audio_path"] = path.lstrip("/")
         sanitized_scenes.append(scene_dict)
 
     props_dict = {"fps": 30, "width": 1920, "height": 1080, "scenes": sanitized_scenes}
@@ -164,7 +171,13 @@ def _render_scene_group(
         str(output_path),
     ]
 
-    subprocess.run(command, cwd=renderer_dir, check=True, capture_output=True, text=True)
+    try:
+        subprocess.run(command, cwd=renderer_dir, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        # Capture the actual error output from Node.js/Remotion
+        error_msg = e.stderr.strip().split('\n')[-3:] # Get last 3 lines
+        logger.error("Remotion render failed (chunk %s). Stderr: %s", group_idx, e.stderr)
+        raise RuntimeError(f"Render Engine Error: {' | '.join(error_msg)}") from e
     return output_path
 
 def _stitch_videos_ffmpeg(chunk_videos: list[Path], output_path: Path) -> None:
@@ -209,6 +222,7 @@ def _background_job_worker(job_id: str, user_id: int | None, text: str, max_sc: 
         props = _generate_render_props_internal(text, max_sc, job_id)
         crud.create_scenes(db, job_id, [s.model_dump() for s in props.scenes])
         if render:
+            crud.update_job_status(db, job_id, "rendering")
             with _RENDER_LIMITER:
                 video_url = _run_remotion_render(job_id, props)
                 crud.create_video(db, job_id, video_url)
