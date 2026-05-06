@@ -137,13 +137,69 @@ def _generate_render_props_internal(
 
         return props
 
+def _render_scene_group(
+    group_idx: int,
+    scenes: list[SceneChoreography],
+    job_id: str,
+    renderer_dir: Path,
+    tmp_dir: Path,
+    concurrency: int = 1,
+) -> Path:
+    sanitized_scenes: list[dict] = []
+    for scene in scenes:
+        scene_dict = scene.model_dump()
+        sanitized_scenes.append(scene_dict)
+
+    props_dict = {"fps": 30, "width": 1920, "height": 1080, "scenes": sanitized_scenes}
+    props_path = tmp_dir / f"chunk_{group_idx}_props.json"
+    props_path.write_text(json.dumps(props_dict, indent=2))
+
+    output_path = tmp_dir / f"chunk_{group_idx}.mp4"
+    command = [
+        "node_modules/.bin/remotion", "render",
+        "src/Root.tsx", "Whiteboard",
+        f"--props={props_path}",
+        f"--concurrency={concurrency}",
+        "--chromium-flags=--no-sandbox",
+        str(output_path),
+    ]
+
+    subprocess.run(command, cwd=renderer_dir, check=True, capture_output=True, text=True)
+    return output_path
+
+def _stitch_videos_ffmpeg(chunk_videos: list[Path], output_path: Path) -> None:
+    concat_list = output_path.parent / "concat_list.txt"
+    concat_list.write_text("\n".join(f"file '{v.resolve()}'" for v in chunk_videos), encoding="utf-8")
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(output_path)], check=True)
+
 def _run_remotion_render(job_id: str, props: RenderProps) -> str:
-    # Logic extracted from main.py for parallel rendering
-    # ... (omitting full implementation here for brevity, will move it over)
-    return "placeholder_url" # Implementation continues below
+    renderer_dir = Path(__file__).resolve().parent.parent.parent / "renderer"
+    output_filename = f"{job_id}.mp4"
+    
+    n = len(props.scenes)
+    n_groups = 4
+    chunk_size = max(1, -(-n // n_groups))
+    groups = [props.scenes[i: i + chunk_size] for i in range(0, n, chunk_size)]
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        chunk_videos: dict[int, Path] = {}
+
+        with ThreadPoolExecutor(max_workers=n_groups) as pool:
+            futures = {pool.submit(_render_scene_group, i, g, job_id, renderer_dir, tmp): i for i, g in enumerate(groups) if g}
+            for future in as_completed(futures):
+                chunk_videos[futures[future]] = future.result()
+
+        ordered_chunks = [chunk_videos[i] for i in sorted(chunk_videos)]
+        stitch_local = tmp / "stitched.mp4"
+        _stitch_videos_ffmpeg(ordered_chunks, stitch_local)
+        
+        remote_path = f"runs/{output_filename}"
+        accessible_url = _storage.upload_file(stitch_local, remote_path)
+
+    return accessible_url
 
 def start_background_job(job_id: str, user_id: int | None, text: str, max_sc: int, render: bool):
-    """Entry point for the thread executor."""
     _JOB_EXECUTOR.submit(_background_job_worker, job_id, user_id, text, max_sc, render)
 
 def _background_job_worker(job_id: str, user_id: int | None, text: str, max_sc: int, render: bool):
@@ -154,8 +210,8 @@ def _background_job_worker(job_id: str, user_id: int | None, text: str, max_sc: 
         crud.create_scenes(db, job_id, [s.model_dump() for s in props.scenes])
         if render:
             with _RENDER_LIMITER:
-                # Actual render logic will go here
-                pass 
+                video_url = _run_remotion_render(job_id, props)
+                crud.create_video(db, job_id, video_url)
         crud.set_job_completed(db, job_id)
     except Exception as exc:
         logger.exception("Job %s failed", job_id)
