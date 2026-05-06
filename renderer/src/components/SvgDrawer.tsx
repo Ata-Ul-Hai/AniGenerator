@@ -66,8 +66,16 @@ const RoughElement: React.FC<{
       generator = rc.circle(Number(node.attrs.cx), Number(node.attrs.cy), Number(node.attrs.r) * 2, options);
     } else if (node.kind === 'rect') {
       generator = rc.rectangle(Number(node.attrs.x), Number(node.attrs.y), Number(node.attrs.width), Number(node.attrs.height), options);
+    } else if (node.kind === 'line') {
+      generator = rc.line(Number(node.attrs.x1), Number(node.attrs.y1), Number(node.attrs.x2), Number(node.attrs.y2), options);
+    } else if (node.kind === 'polyline' || node.kind === 'polygon') {
+      const points = node.attrs.points.split(/[\s,]+/).map(Number).reduce((acc: any, val, i) => {
+        if (i % 2 === 0) acc.push([val]);
+        else acc[acc.length - 1].push(val);
+        return acc;
+      }, []);
+      generator = node.kind === 'polygon' ? rc.polygon(points, options) : rc.linearPath(points, options);
     } else {
-      // Fallback or other shapes
       return;
     }
 
