@@ -63,15 +63,15 @@ _allowed_origins = [
 ]
 
 # When allow_credentials=True, 'allow_origins' cannot be ["*"].
-# We must explicitly list the development origin.
+# We must explicitly list the development and production origins.
 if "*" in _allowed_origins or not _allowed_origins:
-    if _settings.app_env.lower() != "production":
-        _allowed_origins = [
-            "http://localhost:5173", 
-            "http://127.0.0.1:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:3000"
-        ]
+    _allowed_origins = [
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://ani-generator.vercel.app" # Production Vercel Domain
+    ]
 
 logger.info(f"CORS Allowed Origins: {_allowed_origins}")
 
