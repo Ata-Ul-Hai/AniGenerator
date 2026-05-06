@@ -121,6 +121,9 @@ class Settings(BaseSettings):
 
         if self.jwt_secret in _INSECURE_DEFAULTS:
             errors.append("JWT_SECRET is set to an insecure default")
+        
+        if not self.gemini_api_key or self.gemini_api_key in _INSECURE_DEFAULTS:
+            errors.append("GEMINI_API_KEY is missing or invalid")
 
         if errors:
             raise ValueError(
