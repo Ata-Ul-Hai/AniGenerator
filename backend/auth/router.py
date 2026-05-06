@@ -70,13 +70,13 @@ def login(
     
     settings = get_settings()
     
-    # Set the 'Defensible' Cookie
+    is_prod = settings.app_env.lower() == "production"
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=settings.app_env.lower() == "production", # Only secure in production
-        samesite="lax",
+        secure=is_prod, # Must be true for samesite=none
+        samesite="none" if is_prod else "lax",
         max_age=3600 * 24 * 7 # 1 week
     )
     return {"status": "ok", "message": "Logged in successfully"}
