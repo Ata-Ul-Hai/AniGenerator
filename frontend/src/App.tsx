@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 
@@ -10,6 +10,7 @@ import AdminPanel from "./pages/AdminPanel"; // Will create next
 
 function App() {
   const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
 
   if (loading) {
     return (
@@ -22,7 +23,7 @@ function App() {
   return (
     <div className="dark min-h-screen bg-black">
       <Routes>
-        <Route path="/" element={<LandingPage onGetStarted={() => {}} />} />
+        <Route path="/" element={<LandingPage onGetStarted={() => navigate("/dashboard")} />} />
         <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <LoginPage />} />
         <Route path="/signup" element={user ? <Navigate to="/dashboard" /> : <SignupPage />} />
         

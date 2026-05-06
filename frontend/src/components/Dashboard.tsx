@@ -5,6 +5,8 @@ import {
   FileText, Settings, BarChart3, RefreshCw, AlertCircle, ArrowRight
 } from "lucide-react";
 import { GlassPanel } from "./common/GlassPanel";
+import api from "../api/api";
+import { useAuth } from "../context/AuthContext";
 
 interface Props {
   token: string;
@@ -24,7 +26,8 @@ const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
 const MAX_CLIENT_FILE_SIZE_MB = 20;
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt";
 
-const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
+const Dashboard: React.FC<Props> = ({ onLogout }) => {
+  const { user, checkAuth } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [extractedText, setExtractedText] = useState("");
   const [maxScenes, setMaxScenes] = useState(6);
@@ -33,11 +36,18 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
   const [stage, setStage] = useState<"idle" | "extracting" | "extracted" | "generating">("idle");
   const [statusMsg, setStatusMsg] = useState("");
   const [isError, setIsError] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCountRef = useRef(0);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
-  const headers = { Authorization: `Bearer ${token}` };
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+  // Check onboarding status
+  useEffect(() => {
+    if (user && !user.has_seen_onboarding) {
+      setShowOnboarding(true);
+    }
+  }, [user]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -46,6 +56,18 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     };
   }, []);
 
+  const handleAcknowledgeOnboarding = async () => {
+    try {
+      await api.post('/user/mark-onboarded');
+      await checkAuth(); // Refresh user context
+      setShowOnboarding(false);
+    } catch (err) {
+      console.error('Failed to mark onboarded', err);
+      // Even if it fails, hide the popup for this session
+      setShowOnboarding(false);
+    }
+  };
+
   const pollJob = (jobId: string) => {
     if (pollRef.current) clearTimeout(pollRef.current);
     pollCountRef.current = 0;
@@ -53,7 +75,6 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     const executePoll = async () => {
       pollCountRef.current += 1;
 
-      // Timeout after MAX_POLL_ATTEMPTS
       if (pollCountRef.current > MAX_POLL_ATTEMPTS) {
         pollRef.current = null;
         setIsError(true);
@@ -63,16 +84,8 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
       }
 
       try {
-        const res = await fetch(`${API_BASE_URL}/jobs/${jobId}`, { headers });
-        if (res.status === 401) {
-          pollRef.current = null;
-          setIsError(true);
-          setStatusMsg("Session expired. Please log in again.");
-          setStage("idle");
-          return;
-        }
-        if (!res.ok) throw new Error("Status poll failed");
-        const data = await res.json();
+        const res = await api.get(`/user/jobs/${jobId}`);
+        const data = res.data;
         setJob(data);
         if (data.status === "completed" || data.status === "failed") {
           pollRef.current = null;
@@ -81,11 +94,17 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
           setStatusMsg(data.status === "completed" ? "Generation successful" : `Engine Error: ${data.error || "Unknown error"}`);
           return;
         }
-      } catch (err: unknown) {
+      } catch (err: any) {
+        if (err.response?.status === 401) {
+          pollRef.current = null;
+          setIsError(true);
+          setStatusMsg("Session expired. Please log in again.");
+          setStage("idle");
+          return;
+        }
         pollRef.current = null;
         setIsError(true);
-        const message = err instanceof Error ? err.message : "Unknown error";
-        setStatusMsg(`Network Error: ${message}`);
+        setStatusMsg(`Network Error: ${err.message || "Unknown error"}`);
         return;
       }
       
@@ -105,23 +124,17 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     form.append("file", file);
     
     try {
-      const res = await fetch(`${API_BASE_URL}/upload`, { method: "POST", headers, body: form });
-      const data = await res.json();
+      const res = await api.post("/user/upload", form, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      const data = res.data;
       
-      if (!res.ok) {
-        setIsError(true);
-        setStatusMsg(`Extraction Failed: ${data.detail || JSON.stringify(data)}`);
-        setStage("idle");
-        return;
-      }
-
       setExtractedText(data.extracted_text || "");
       setStage("extracted");
       setStatusMsg(`Successfully extracted ${data.chunk_count ?? 0} semantic units.`);
-    } catch (err: unknown) {
+    } catch (err: any) {
       setIsError(true);
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setStatusMsg(`Connection Error: ${message}`);
+      setStatusMsg(`Extraction Failed: ${err.response?.data?.detail || err.message || "Unknown error"}`);
       setStage("idle");
     }
   };
@@ -130,29 +143,21 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     if (!extractedText) return;
     setStage("generating");
     setIsError(false);
-    setStatusMsg("Composing scenes with Gemini...");
+    setStatusMsg("Composing scenes with LLM...");
     
     try {
-      const res = await fetch(`${API_BASE_URL}/generate/async`, {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ extracted_text: extractedText, max_scenes: maxScenes, render_video: renderVideo }),
+      const res = await api.post("/user/generate", { 
+        extracted_text: extractedText, 
+        max_scenes: maxScenes, 
+        render_video: renderVideo 
       });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setIsError(true);
-        setStatusMsg(`Orchestration Failed: ${data.detail || JSON.stringify(data)}`);
-        setStage("idle");
-        return;
-      }
+      const data = res.data;
 
       setJob(data);
       pollJob(data.job_id);
-    } catch (err: unknown) {
+    } catch (err: any) {
       setIsError(true);
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setStatusMsg(`Composition Error: ${message}`);
+      setStatusMsg(`Orchestration Failed: ${err.response?.data?.detail || err.message || "Unknown error"}`);
       setStage("idle");
     }
   };
@@ -161,7 +166,6 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     const selected = e.target.files?.[0];
     if (!selected) return;
 
-    // Client-side file size validation
     const sizeMb = selected.size / (1024 * 1024);
     if (sizeMb > MAX_CLIENT_FILE_SIZE_MB) {
       setFile(null);
@@ -181,19 +185,49 @@ const Dashboard: React.FC<Props> = ({ token, onLogout }) => {
     setStage("idle");
   };
 
+
   return (
     <div className="min-h-screen bg-background text-zinc-100 flex flex-col font-sans">
+      {/* Onboarding Modal */}
+      {showOnboarding && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent-purple to-accent-blue" />
+            <h2 className="text-2xl font-bold mb-2">Welcome to Beta!</h2>
+            <p className="text-zinc-400 mb-6 leading-relaxed">
+              You've been granted beta access to the AniGenerator. To optimize our resources during this phase, usage is currently limited:
+            </p>
+            <div className="bg-black/50 border border-white/5 rounded-xl p-4 mb-6 flex items-start gap-4">
+              <Zap className="text-accent-blue mt-1 shrink-0" size={20} />
+              <div>
+                <strong className="block text-white mb-1">1 Successful Video per 24 hours</strong>
+                <span className="text-sm text-zinc-500">Failed attempts or errors do not count towards your daily limit.</span>
+              </div>
+            </div>
+            <button 
+              onClick={handleAcknowledgeOnboarding}
+              className="w-full py-3 bg-white text-black font-bold rounded-xl hover:bg-zinc-200 transition-colors"
+            >
+              I Understand
+            </button>
+          </div>
+        </div>
+      )}
+
       <nav className="h-16 border-b border-white/5 bg-zinc-950/50 backdrop-blur-md px-8 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 bg-accent-blue/20 rounded-lg flex items-center justify-center border border-accent-blue/30">
             <Zap size={16} className="text-accent-blue" />
           </div>
-          <h1 className="text-sm font-bold tracking-tight">AniGenerator <span className="text-zinc-600 font-normal ml-2">Control Room</span></h1>
+          <h1 className="text-sm font-bold tracking-tight">AniGenerator <span className="text-accent-blue text-[10px] bg-accent-blue/10 px-1.5 py-0.5 rounded ml-2 font-bold uppercase tracking-widest">v1.5 Beta</span></h1>
         </div>
         <div className="flex items-center gap-4">
           <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] uppercase tracking-wider text-zinc-500 font-bold">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
             Active Mode: Local/Docker
+          </div>
+          <div className="text-xs text-zinc-400 hidden sm:block mr-4 border-r border-white/10 pr-4">
+            Logged in as <span className="text-white font-bold">{user?.username}</span>
           </div>
           <button onClick={onLogout} className="flex items-center gap-2 text-xs text-zinc-500 hover:text-white transition-colors">
             <LogOut size={14} />
