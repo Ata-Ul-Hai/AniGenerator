@@ -22,19 +22,6 @@ const SceneLayer: React.FC<{
   sceneDurationFrames: number;
   drawDurationFrames: number;
 }> = ({scene, sceneDurationFrames, drawDurationFrames}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-
-  const reveal = spring({
-    fps,
-    frame,
-    config: {
-      damping: 220,
-      stiffness: 90,
-      mass: 0.7,
-    },
-  });
-
   return (
     <AbsoluteFill>
       <SvgDrawer
@@ -50,43 +37,37 @@ const SceneLayer: React.FC<{
 
 export const Whiteboard: React.FC<RenderProps> = ({fps, scenes}) => {
   const validFps = fps || 30;
-  const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
 
   if (!scenes.length) {
     return (
       <AbsoluteFill
         style={{
-          background:
-            'radial-gradient(circle at 15% 20%, rgba(255,255,255,0.7), rgba(228,234,245,0.4) 40%, rgba(181,198,223,0.45)), linear-gradient(120deg, #f6ead2, #d5e4f7 45%, #bfd0e9)',
-          fontFamily: '"Didot", "Bodoni MT", serif',
+          background: '#fdfdfd',
+          fontFamily: 'sans-serif',
           color: '#13294b',
           justifyContent: 'center',
           alignItems: 'center',
-          letterSpacing: '0.04em',
-          fontSize: 68,
+          fontSize: 48,
         }}
       >
-        Waiting for render_props scenes...
+        Waiting for pipeline...
       </AbsoluteFill>
     );
   }
 
-  let cursor = 0;
-
   return (
     <AbsoluteFill
       style={{
-        background: '#f7f7f5',
+        background: '#fdfdfd', // Base Paper
         overflow: 'hidden',
       }}
     >
+      {/* Universal Grid Pattern */}
       <AbsoluteFill
         style={{
-          backgroundImage:
-            'linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
-          mixBlendMode: 'multiply',
+          backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
+          backgroundSize: '50px 50px',
+          opacity: 0.8,
           pointerEvents: 'none',
         }}
       />
@@ -118,31 +99,6 @@ export const Whiteboard: React.FC<RenderProps> = ({fps, scenes}) => {
           );
         })}
       </TransitionSeries>
-
-      <AbsoluteFill
-        style={{
-          justifyContent: 'flex-end',
-          pointerEvents: 'none',
-        }}
-      >
-        <div
-          style={{
-            margin: '0 60px 40px',
-            height: 8,
-            borderRadius: 999,
-            background: 'rgba(15, 35, 58, 0.16)',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              width: `${(frame / Math.max(1, durationInFrames)) * 100}%`,
-              height: '100%',
-              background: 'linear-gradient(90deg, #7b2e19, #123c80)',
-            }}
-          />
-        </div>
-      </AbsoluteFill>
     </AbsoluteFill>
   );
 };
