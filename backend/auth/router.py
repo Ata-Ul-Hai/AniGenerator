@@ -1,64 +1,90 @@
-"""Authentication routes for issuing short-lived JWT access tokens."""
-
 from __future__ import annotations
 
-from hmac import compare_digest
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.orm import Session
 
-from fastapi import APIRouter, HTTPException, Request, status
-from pydantic import BaseModel, Field
-
-from backend.auth.jwt import create_access_token
-from backend.core.config import get_settings
+from backend.auth.security import create_access_token, get_password_hash, verify_password
+from backend.auth.jwt import get_current_user
+from backend.db.database import get_db
+from backend.db.models import User
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=64)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+
+class UserRead(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_admin: bool
+    is_beta_authorized: bool
+    has_seen_onboarding: bool
+
+    class Config:
+        from_attributes = True
 
 class AuthLoginRequest(BaseModel):
-	"""Credential payload accepted by the auth token endpoint."""
+    username: str
+    password: str
 
-	username: str = Field(..., min_length=1)
-	password: str = Field(..., min_length=1)
+@router.post("/signup", response_model=UserRead)
+def signup(request: UserCreate, db: Session = Depends(get_db)):
+    """Public signup for the beta waitlist."""
+    # Check if user already exists
+    if db.query(User).filter(User.username == request.username).first():
+        raise HTTPException(status_code=400, detail="Username already registered")
+    if db.query(User).filter(User.email == request.email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    new_user = User(
+        username=request.username,
+        email=request.email,
+        hashed_password=get_password_hash(request.password),
+        is_beta_authorized=False # Pending admin approval
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    return new_user
 
+@router.post("/login")
+def login(
+    response: Response,
+    request: AuthLoginRequest,
+    db: Session = Depends(get_db)
+):
+    """Authenticate user and set a secure HttpOnly cookie."""
+    user = db.query(User).filter(User.username == request.username).first()
+    if not user or not verify_password(request.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+    
+    token = create_access_token(subject=user.username)
+    
+    # Set the 'Defensible' Cookie
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=True, # Should be True in prod (HTTPS)
+        samesite="lax",
+        max_age=3600 * 24 * 7 # 1 week
+    )
+    return {"status": "ok", "message": "Logged in successfully"}
 
-class AuthTokenResponse(BaseModel):
-	"""JWT response payload returned after successful login."""
+@router.post("/logout")
+def logout(response: Response):
+    """Clear the authentication cookie."""
+    response.delete_cookie("access_token")
+    return {"status": "ok", "message": "Logged out successfully"}
 
-	access_token: str
-	token_type: str = "bearer"
-	expires_in_seconds: int
-
-
-@router.post("/token", response_model=AuthTokenResponse)
-def issue_access_token(request: AuthLoginRequest, http_request: Request) -> AuthTokenResponse:
-	"""Issue a JWT token using static credentials from environment settings."""
-
-	settings = get_settings()
-	if not settings.enable_auth:
-		raise HTTPException(
-			status_code=status.HTTP_400_BAD_REQUEST,
-			detail="Authentication is disabled (ENABLE_AUTH=false)",
-		)
-
-	# Rate limiting — check before credential validation
-	raw_ip = http_request.client.host if http_request.client else "unknown"
-	client_ip = http_request.headers.get("X-Forwarded-For", raw_ip).split(",")[0].strip()
-	limiter = getattr(http_request.app.state, "auth_limiter", None)
-	if limiter is not None:
-		limiter.check(client_ip)
-
-	valid_username = compare_digest(request.username, settings.auth_username)
-	valid_password = compare_digest(request.password, settings.auth_password)
-	if not (valid_username and valid_password):
-		# Record failed attempt for rate limiting
-		if limiter is not None:
-			limiter.record(client_ip)
-		raise HTTPException(
-			status_code=status.HTTP_401_UNAUTHORIZED,
-			detail="Invalid credentials",
-		)
-
-	token = create_access_token(subject=request.username)
-	return AuthTokenResponse(
-		access_token=token,
-		expires_in_seconds=settings.access_token_expire_minutes * 60,
-	)
+@router.get("/me", response_model=UserRead)
+def get_me(current_user: User = Depends(get_current_user)):
+    """Return the current user's profile."""
+    return current_user
