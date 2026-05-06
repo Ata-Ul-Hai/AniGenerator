@@ -9,10 +9,11 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@remotion/transitions": "4.0.443",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "remotion": "4.0.443",
-    "@remotion/transitions": "4.0.443"
+    "roughjs": "^4.6.6"
   },
   "devDependencies": {
     "@remotion/cli": "4.0.443",
