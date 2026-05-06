@@ -1,5 +1,6 @@
-import React, {useMemo} from 'react';
-import {AbsoluteFill, interpolate, useCurrentFrame} from 'remotion';
+import React, {useMemo, useRef, useEffect, useState} from 'react';
+import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import rough from 'roughjs';
 
 type SvgDrawerProps = {
   svgContent: string;
@@ -10,8 +11,7 @@ type SvgDrawerProps = {
 type ParsedAttr = Record<string, string>;
 type PathNode = {kind: 'path' | 'line' | 'polyline' | 'polygon'; attrs: ParsedAttr};
 type FillNode = {kind: 'rect' | 'circle' | 'ellipse'; attrs: ParsedAttr};
-type TextNode = {kind: 'text'; attrs: ParsedAttr; content: string};
-type ParsedNode = PathNode | FillNode | TextNode;
+type ParsedNode = PathNode | FillNode;
 
 const parseAttrs = (attrStr: string): ParsedAttr => {
   const result: ParsedAttr = {};
@@ -25,119 +25,133 @@ const parseAttrs = (attrStr: string): ParsedAttr => {
 
 const parseSvgNodes = (markup: string): ParsedNode[] => {
   const nodes: ParsedNode[] = [];
-
-  // Parse self-closing and open shape tags
   const shapeRe = /<(path|line|polyline|polygon|rect|circle|ellipse)\b([^>]*?)\s*\/?>/gi;
   let m: RegExpExecArray | null;
   while ((m = shapeRe.exec(markup)) !== null) {
     const tag = m[1].toLowerCase() as ParsedNode['kind'];
     const attrs = parseAttrs(m[2]);
-    nodes.push({kind: tag as PathNode['kind'] | FillNode['kind'], attrs} as PathNode | FillNode);
+    nodes.push({kind: tag, attrs} as ParsedNode);
   }
-
-  // Parse text elements with content
-  const textRe = /<text\b([^>]*)>([\s\S]*?)<\/text>/gi;
-  while ((m = textRe.exec(markup)) !== null) {
-    nodes.push({kind: 'text', attrs: parseAttrs(m[1]), content: m[2].trim()});
-  }
-
   return nodes;
 };
 
 const extractViewBox = (markup: string): string => {
   const m = markup.match(/viewBox\s*=\s*["']([^"']*)["']/i);
-  return m ? m[1] : '0 0 400 300';
+  return m ? m[1] : '0 0 400 400';
 };
 
-const elementProgress = (global: number, index: number, total: number): number => {
-  if (total <= 1) return global;
-  const start = index / total;
-  const end = (index + 1) / total;
-  return Math.max(0, Math.min(1, (global - start) / Math.max(0.001, end - start)));
-};
+const RoughElement: React.FC<{
+  node: ParsedNode;
+  progress: number;
+  index: number;
+}> = ({node, progress, index}) => {
+  const svgRef = useRef<SVGGElement>(null);
+  const [roughPath, setRoughPath] = useState<string>('');
 
-type AnimatedPathProps = {node: PathNode; drawProgress: number; index: number; total: number};
-const AnimatedPath: React.FC<AnimatedPathProps> = ({node, drawProgress, index, total}) => {
-  const progress = elementProgress(drawProgress, index, total);
-  const {stroke = '#1a1a1a', 'stroke-width': sw = '3', 'stroke-linecap': slc = 'round',
-    'stroke-linejoin': slj = 'round', fill: _f, style: _s, class: _c, ...rest} = node.attrs;
+  useEffect(() => {
+    const rc = rough.svg(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
+    let generator;
+    
+    const options = {
+      stroke: node.attrs.stroke || '#000',
+      strokeWidth: 2,
+      roughness: 1.5,
+      bowing: 1,
+      seed: index + 1, // Stable seed for this element
+    };
 
-  const style: React.CSSProperties = {
-    fill: 'none', stroke,
-    strokeWidth: Number(sw) || 3,
-    strokeLinecap: slc as React.CSSProperties['strokeLinecap'],
-    strokeLinejoin: slj as React.CSSProperties['strokeLinejoin'],
-    strokeDasharray: 1,
-    strokeDashoffset: 1 - progress,
-  };
+    if (node.kind === 'path') {
+      generator = rc.path(node.attrs.d, options);
+    } else if (node.kind === 'circle') {
+      generator = rc.circle(Number(node.attrs.cx), Number(node.attrs.cy), Number(node.attrs.r) * 2, options);
+    } else if (node.kind === 'rect') {
+      generator = rc.rectangle(Number(node.attrs.x), Number(node.attrs.y), Number(node.attrs.width), Number(node.attrs.height), options);
+    } else if (node.kind === 'line') {
+      generator = rc.line(Number(node.attrs.x1), Number(node.attrs.y1), Number(node.attrs.x2), Number(node.attrs.y2), options);
+    } else if (node.kind === 'polyline' || node.kind === 'polygon') {
+      const points = node.attrs.points.split(/[\s,]+/).map(Number).reduce((acc: any, val, i) => {
+        if (i % 2 === 0) acc.push([val]);
+        else acc[acc.length - 1].push(val);
+        return acc;
+      }, []);
+      generator = node.kind === 'polygon' ? rc.polygon(points, options) : rc.linearPath(points, options);
+    } else {
+      return;
+    }
 
-  if (node.kind === 'path') return <path pathLength={1} style={style} {...rest} />;
-  if (node.kind === 'line') return <line pathLength={1} style={style} {...rest} />;
-  if (node.kind === 'polyline') return <polyline pathLength={1} style={style} {...rest} />;
-  return <polygon pathLength={1} style={style} {...rest} />;
-};
+    // Extract the path data from the rough generated element
+    // Rough.js returns an SVGGElement containing multiple paths
+    const paths = generator.querySelectorAll('path');
+    let combinedPath = '';
+    paths.forEach(p => {
+      combinedPath += p.getAttribute('d') + ' ';
+    });
+    setRoughPath(combinedPath);
+  }, [node, index]);
 
-type AnimatedFillProps = {node: FillNode; fillProgress: number; index: number; total: number};
-const AnimatedFill: React.FC<AnimatedFillProps> = ({node, fillProgress, index, total}) => {
-  const progress = elementProgress(fillProgress, index, total);
-  const {stroke = '#1a1a1a', 'stroke-width': sw = '3', fill: _f, style: _s, class: _c, ...rest} = node.attrs;
-  const style: React.CSSProperties = {
-    fill: 'none', stroke, strokeWidth: Number(sw) || 3,
-    strokeOpacity: progress, fillOpacity: 0,
-  };
-  if (node.kind === 'rect') return <rect style={style} {...rest} />;
-  if (node.kind === 'circle') return <circle style={style} {...rest} />;
-  return <ellipse style={style} {...rest} />;
-};
+  if (!roughPath) return null;
 
-type AnimatedTextProps = {node: TextNode; textProgress: number};
-const AnimatedText: React.FC<AnimatedTextProps> = ({node, textProgress}) => {
-  const {fill = '#1a1a1a', style: _s, class: _c, ...rest} = node.attrs;
   return (
-    <text style={{fill, opacity: textProgress, fontFamily: 'sans-serif', fontSize: '16'}} {...rest}>
-      {node.content}
-    </text>
+    <path
+      d={roughPath}
+      fill="none"
+      stroke={node.attrs.stroke || '#000'}
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      pathLength={1}
+      style={{
+        strokeDasharray: 1,
+        strokeDashoffset: 1 - progress,
+      }}
+    />
   );
 };
 
 export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFrames, sceneDurationFrames}) => {
   const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
 
   const allNodes = useMemo(() => parseSvgNodes(svgContent || ''), [svgContent]);
   const viewBox = useMemo(() => extractViewBox(svgContent || ''), [svgContent]);
 
-  const pathNodes = useMemo(() => allNodes.filter((n): n is PathNode =>
-    n.kind === 'path' || n.kind === 'line' || n.kind === 'polyline' || n.kind === 'polygon'), [allNodes]);
-  const fillNodes = useMemo(() => allNodes.filter((n): n is FillNode =>
-    n.kind === 'rect' || n.kind === 'circle' || n.kind === 'ellipse'), [allNodes]);
-  const textNodes = useMemo(() => allNodes.filter((n): n is TextNode => n.kind === 'text'), [allNodes]);
-
-  const drawProgress = interpolate(frame, [0, Math.max(1, drawDurationFrames)], [0, 1], {extrapolateRight: 'clamp'});
-  const fillProgress = interpolate(frame,
-    [Math.max(0, drawDurationFrames * 0.4), Math.max(1, drawDurationFrames * 1.1)],
-    [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
-  const textProgress = interpolate(frame,
-    [Math.max(0, drawDurationFrames * 0.8), Math.max(1, drawDurationFrames * 1.3)],
-    [0, 1], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+  const entranceSpring = spring({fps, frame, config: {damping: 100, stiffness: 50}});
   const sceneOpacity = interpolate(frame,
-    [0, 8, Math.max(9, sceneDurationFrames - 12), sceneDurationFrames],
+    [0, 10, Math.max(11, sceneDurationFrames - 15), sceneDurationFrames],
     [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
 
   return (
-    <AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', opacity: sceneOpacity,
-      transform: `scale(${0.97 + drawProgress * 0.03})`}}>
-      <div style={{background: 'linear-gradient(145deg, rgba(255,255,255,0.97), rgba(243,247,252,0.85))',
-        border: '1.5px solid rgba(13,47,99,0.12)', borderRadius: 28, padding: '36px 44px',
-        boxShadow: '0 24px 72px rgba(14,33,62,0.18)', display: 'flex',
-        alignItems: 'center', justifyContent: 'center'}}>
+    <AbsoluteFill style={{
+      backgroundColor: '#fdfdfd', // Paper color
+      backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
+      backgroundSize: '40px 40px', // Grid look
+      opacity: sceneOpacity,
+    }}>
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: `scale(${0.95 + entranceSpring * 0.05})`,
+      }}>
         <svg viewBox={viewBox} xmlns="http://www.w3.org/2000/svg"
-          style={{width: 'min(62vw, 1080px)', height: 'min(55vh, 620px)', overflow: 'visible'}}>
-          {fillNodes.map((node, i) =>
-            <AnimatedFill key={`fill-${i}`} node={node} fillProgress={fillProgress} index={i} total={fillNodes.length} />)}
-          {pathNodes.map((node, i) =>
-            <AnimatedPath key={`path-${i}`} node={node} drawProgress={drawProgress} index={i} total={pathNodes.length} />)}
-          {textNodes.map((node, i) =>
-            <AnimatedText key={`text-${i}`} node={node} textProgress={textProgress} />)}
+          style={{width: '80%', height: '80%', overflow: 'visible'}}>
+          {allNodes.map((node, i) => {
+            const elementDelay = (i / allNodes.length) * drawDurationFrames * 0.5;
+            const elementSpring = spring({
+              fps,
+              frame: Math.max(0, frame - elementDelay),
+              config: {damping: 15, stiffness: 100},
+            });
+            return (
+              <RoughElement 
+                key={`${i}-${node.kind}`} 
+                node={node} 
+                index={i}
+                progress={Math.min(1, elementSpring)} 
+              />
+            );
+          })}
         </svg>
       </div>
     </AbsoluteFill>

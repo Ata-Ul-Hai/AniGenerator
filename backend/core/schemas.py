@@ -10,7 +10,7 @@ class SceneScript(BaseModel):
 
     scene_id: int = Field(..., ge=1)
     narration: str = Field(..., min_length=1)
-    svg_markup: str = Field(..., min_length=1)
+    svg_markup: str = Field(default="")  # populated by icon_fetcher, not the LLM
     metaphor_hint: str = Field(..., min_length=1)
 
 

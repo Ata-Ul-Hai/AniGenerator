@@ -1,56 +1,74 @@
-import { useState, useEffect } from "react";
-import LandingPage from "./components/LandingPage.tsx";
-import AdminLogin from "./components/AdminLogin.tsx";
-import Dashboard from "./components/Dashboard.tsx";
+import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-/**
- * Decode a JWT payload without verifying signature (client-side expiry check only).
- */
-function isTokenExpired(token: string): boolean {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return true;
-    let base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    while (base64.length % 4) {
-      base64 += '=';
-    }
-    const payload = JSON.parse(atob(base64));
-    if (!payload.exp) return false;
-    return payload.exp * 1000 < Date.now();
-  } catch {
-    return true;
-  }
-}
+import LandingPage from "./components/LandingPage.tsx";
+import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
+import Dashboard from "./components/Dashboard.tsx"; // Will refactor later
+import AdminPanel from "./pages/AdminPanel"; // Will create next
 
 function App() {
-  const [view, setView] = useState<"landing" | "login" | "dashboard">("landing");
-  const [token, setToken] = useState<string | null>(() => {
-    const stored = localStorage.getItem("admin_token");
-    // Don't restore expired tokens
-    if (stored && isTokenExpired(stored)) {
-      localStorage.removeItem("admin_token");
-      return null;
-    }
-    return stored;
-  });
+  const { user, loading, logout } = useAuth();
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    if (token) {
-      localStorage.setItem("admin_token", token);
-    } else {
-      localStorage.removeItem("admin_token");
-    }
-  }, [token]);
-
-  const handleLogin = (t: string) => { setToken(t); setView("dashboard"); };
-  const handleLogout = () => { setToken(null); setView("landing"); };
-  const handleGetStarted = () => setView(token ? "dashboard" : "login");
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-black">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-white"></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="dark">
-      {view === "landing" && <LandingPage onGetStarted={handleGetStarted} />}
-      {view === "login" && <AdminLogin onLogin={handleLogin} onBack={() => setView("landing")} />}
-      {view === "dashboard" && token && <Dashboard token={token} onLogout={handleLogout} />}
+    <div className="dark min-h-screen bg-black">
+      <Routes>
+        <Route path="/" element={<LandingPage onGetStarted={() => navigate("/dashboard")} />} />
+        <Route path="/login" element={user ? <Navigate to="/dashboard" /> : <LoginPage />} />
+        <Route path="/signup" element={user ? <Navigate to="/dashboard" /> : <SignupPage />} />
+        
+        {/* Protected User Dashboard */}
+        <Route 
+          path="/dashboard" 
+          element={
+            <ProtectedRoute>
+              {user?.is_beta_authorized ? (
+                <Dashboard token="cookie" onLogout={logout} />
+              ) : (
+                <Navigate to="/pending" />
+              )}
+            </ProtectedRoute>
+          } 
+        />
+
+        {/* Waitlist Pending View */}
+        <Route 
+          path="/pending" 
+          element={
+            <ProtectedRoute>
+              <div className="min-h-screen flex items-center justify-center text-white px-4">
+                <div className="text-center">
+                  <h1 className="text-4xl font-bold mb-4">Account Pending</h1>
+                  <p className="text-zinc-400">Your account is on the beta waitlist. An admin needs to approve your access.</p>
+                  <button onClick={logout} className="mt-8 text-zinc-500 hover:text-white underline">Logout</button>
+                </div>
+              </div>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected Admin Panel */}
+        <Route 
+          path="/admin" 
+          element={
+            <ProtectedRoute adminOnly>
+              <AdminPanel />
+            </ProtectedRoute>
+          } 
+        />
+
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
     </div>
   );
 }

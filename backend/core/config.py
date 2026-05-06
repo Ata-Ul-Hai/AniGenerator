@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     run_retention_count: int = Field(default=20, alias="RUN_RETENTION_COUNT")
     output_dir: str = Field(default="../renderer/public", alias="OUTPUT_DIR")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    iconify_base_url: str = Field(default="https://api.iconify.design", alias="ICONIFY_BASE_URL")
     auto_create_tables: bool = Field(default=True, alias="AUTO_CREATE_TABLES")
     recover_stale_jobs_on_startup: bool = Field(default=True, alias="RECOVER_STALE_JOBS_ON_STARTUP")
     database_ssl_mode: str = Field(default="prefer", alias="DATABASE_SSL_MODE")

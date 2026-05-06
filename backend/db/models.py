@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.db.database import Base
@@ -20,12 +20,32 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class User(Base):
+    """Represents a registered user with specific access roles."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_beta_authorized: Mapped[bool] = mapped_column(Boolean, default=False)
+    has_seen_onboarding: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    # Relationships
+    jobs: Mapped[list[Job]] = relationship("Job", back_populates="user", cascade="all, delete-orphan")
+
+
 class Job(Base):
     """Represents one end-to-end pipeline run."""
 
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)       # uuid hex
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="queued")   # queued|running|completed|failed
     input_filename: Mapped[str] = mapped_column(String(255), default="")
     max_scenes: Mapped[int] = mapped_column(Integer, default=15)
@@ -34,6 +54,7 @@ class Job(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     # Relationships
+    user: Mapped[User | None] = relationship("User", back_populates="jobs")
     scenes: Mapped[list[Scene]] = relationship("Scene", back_populates="job", cascade="all, delete-orphan")
     video: Mapped[Video | None] = relationship("Video", back_populates="job", uselist=False, cascade="all, delete-orphan")
 

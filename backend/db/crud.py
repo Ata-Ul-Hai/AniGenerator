@@ -22,15 +22,58 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from backend.db.models import Job, Scene, Video
+from backend.db.models import Job, Scene, User, Video
 
 logger = logging.getLogger(__name__)
 
+# ── User ──────────────────────────────────────────────────────────────────────
+
+def get_user_by_username(db: Session, username: str) -> User | None:
+    return db.query(User).filter(User.username == username).first()
+
+def get_user_by_email(db: Session, email: str) -> User | None:
+    return db.query(User).filter(User.email == email).first()
+
+def list_users(db: Session, limit: int = 100) -> list[User]:
+    return db.query(User).order_by(User.created_at.desc()).limit(limit).all()
+
+def update_user_beta_access(db: Session, user_id: int, authorized: bool) -> User | None:
+    user = db.get(User, user_id)
+    if user:
+        user.is_beta_authorized = authorized
+        db.commit()
+        db.refresh(user)
+    return user
+
+def delete_user(db: Session, user_id: int) -> bool:
+    user = db.get(User, user_id)
+    if user:
+        db.delete(user)
+        db.commit()
+        return True
+    return False
+
+def mark_user_onboarded(db: Session, user_id: int) -> None:
+    user = db.get(User, user_id)
+    if user:
+        user.has_seen_onboarding = True
+        db.commit()
+
+def count_user_completed_jobs_last_24h(db: Session, user_id: int) -> int:
+    """Count how many jobs this user completed in the last 24 hours."""
+    from datetime import datetime, timedelta, timezone
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    return db.query(Job).filter(
+        Job.user_id == user_id,
+        Job.status == "completed",
+        Job.created_at >= since
+    ).count()
+
 # ── Job ───────────────────────────────────────────────────────────────────────
 
-def create_job(db: Session, job_id: str, input_filename: str = "", max_scenes: int = 15) -> Job:
+def create_job(db: Session, job_id: str, user_id: int | None = None, input_filename: str = "", max_scenes: int = 15) -> Job:
     """Insert a new job row with status=queued."""
-    job = Job(id=job_id, status="queued", input_filename=input_filename, max_scenes=max_scenes)
+    job = Job(id=job_id, user_id=user_id, status="queued", input_filename=input_filename, max_scenes=max_scenes)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -96,6 +139,14 @@ def set_job_failed(db: Session, job_id: str, error: str) -> None:
     job.error = error
     job.updated_at = datetime.now(timezone.utc)
     db.commit()
+
+
+def update_job_status(db: Session, job_id: str, status: str) -> None:
+    job = db.get(Job, job_id)
+    if job:
+        job.status = status
+        job.updated_at = datetime.now(timezone.utc)
+        db.commit()
 
 
 # ── Scenes ────────────────────────────────────────────────────────────────────

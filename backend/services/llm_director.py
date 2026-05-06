@@ -20,33 +20,14 @@ You are a whiteboard animation artist and explainer. Your job is to convert text
 
 For EACH scene you must:
 1. Write a friendly, conversational narration (like a teacher explaining to a curious friend)
-2. Draw a UNIQUE, DETAILED hand-drawn SVG illustration that visually represents the concept
-
-CRITICAL SVG RULES — follow these exactly or the animation will break:
-- viewBox MUST be "0 0 400 300"
-- Use ONLY <path>, <circle>, <rect>, <line>, <polyline>, <ellipse> elements
-- ALL elements must have: fill="none" stroke="#1a1a1a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"
-- Draw RECOGNISABLE illustrations using many path elements — not just a box with a label
-- Use cubic bezier curves (C), quadratic curves (Q), and lines (L) in path data
-- Each SVG must have at least 8-15 path/shape elements to look like a real drawing
-- NO <text> labels, NO <image>, NO <use>, NO <defs>, NO gradients, NO clip-paths
-- The illustration must be DIFFERENT for each scene — draw what matches the narration
-
-EXAMPLES OF GOOD SVG PATHS:
-- Wallet: a rounded rectangle body + a horizontal divider + a small card slot pocket
-- Network: several circles connected by lines radiating outward like a web
-- Lock: a U-shaped shackle above a rectangular body with a keyhole circle
-- Bitcoin coin: a circle with a B shape inside made of paths
-- Chain/blockchain: two interlocking oval links side by side repeated
-- Computer: a rectangle monitor + stand + keyboard rectangle below
+2. Describe a simple, concrete visual metaphor or icon that represents the concept (e.g., 'a wallet', 'a network of nodes', 'a padlock')
 
 OUTPUT FORMAT — return ONLY a valid JSON array, no markdown, no explanation:
 [
   {
     "scene_id": 1,
     "narration": "conversational spoken explanation here",
-    "svg_markup": "<svg viewBox='0 0 400 300' xmlns='http://www.w3.org/2000/svg'>...many path elements...</svg>",
-    "metaphor_hint": "one sentence describing the visual metaphor"
+    "metaphor_hint": "a single concrete noun or short phrase for the icon (e.g., 'wallet', 'shield', 'network')"
   }
 ]
 
@@ -54,11 +35,10 @@ EXAMPLE of a CORRECT scene (wallet concept):
 {
   "scene_id": 1,
   "narration": "Think of Bitcoin like digital cash you keep in a wallet. Just like a leather wallet holds your bills and cards, a Bitcoin wallet holds your digital coins.",
-  "svg_markup": "<svg viewBox='0 0 400 300' xmlns='http://www.w3.org/2000/svg'><path d='M60,70 L60,230 Q60,245 75,245 L325,245 Q340,245 340,230 L340,70 Q340,55 325,55 L75,55 Q60,55 60,70 Z' fill='none' stroke='#1a1a1a' stroke-width='3' stroke-linecap='round'/><path d='M60,110 L340,110' fill='none' stroke='#1a1a1a' stroke-width='3'/><path d='M240,110 L240,160 Q240,175 255,175 L310,175 Q325,175 325,160 L325,110' fill='none' stroke='#1a1a1a' stroke-width='3' stroke-linecap='round'/><circle cx='282' cy='142' r='12' fill='none' stroke='#1a1a1a' stroke-width='3'/><path d='M90,140 L160,140' fill='none' stroke='#1a1a1a' stroke-width='2.5'/><path d='M90,160 L180,160' fill='none' stroke='#1a1a1a' stroke-width='2.5'/><path d='M90,80 L200,80' fill='none' stroke='#1a1a1a' stroke-width='2'/><path d='M90,180 L150,180' fill='none' stroke='#1a1a1a' stroke-width='2'/><path d='M90,200 L170,200' fill='none' stroke='#1a1a1a' stroke-width='2'/></svg>",
-  "metaphor_hint": "A physical leather wallet with a card pocket and divider"
+  "metaphor_hint": "leather wallet"
 }
 
-IMPORTANT: Every scene needs a DIFFERENT, UNIQUE illustration. Do not reuse the same SVG paths across scenes.
+IMPORTANT: Every scene needs a DIFFERENT, UNIQUE visual metaphor.
 Maximum __MAX_SCENES__ scenes.
 
 NARRATION LENGTH RULE:
@@ -74,7 +54,9 @@ STRICT_RETRY_SUFFIX = """
 
 Your last response was not valid JSON. Return ONLY a JSON array of scene objects.
 No markdown code fences. No explanation text. Start with [ and end with ].
-Each svg_markup must contain at least 8 path/shape elements with proper SVG attributes.
+Your last response was not valid JSON. Return ONLY a JSON array of scene objects.
+No markdown code fences. No explanation text. Start with [ and end with ].
+Each metaphor_hint should be a concrete noun representing the visual.
 """.strip()
 
 SCENE_LIST_ADAPTER: TypeAdapter[list[SceneScript]] = TypeAdapter(list[SceneScript])

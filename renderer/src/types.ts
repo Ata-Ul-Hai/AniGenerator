@@ -20,4 +20,4 @@ export type RenderProps = {
 };
 
 /** Gap between scenes for transition animation (ms). Shared between Root and Whiteboard. */
-export const TRANSITION_MS = 450;
+export const TRANSITION_MS = 600;
