@@ -35,20 +35,20 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
     return encoded_jwt
 
 def get_token_from_cookie(request: Request) -> str:
-    """Extract the JWT token from a secure HttpOnly cookie.
+    """Extract the JWT token from the Authorization header (primary) or cookie (fallback)."""
+    # 1. Check Header (Modern/Reliable for Cross-Domain)
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        return auth_header.split(" ")[1]
     
-    This is the 'Defensible' part: it prevents XSS from reading the token.
-    """
+    # 2. Check Cookie (Legacy/Local Dev)
     token = request.cookies.get("access_token")
-    if not token:
-        # Fallback to Header for CLI/API testing if needed, but cookies are priority
-        auth_header = request.headers.get("Authorization")
-        if auth_header and auth_header.startswith("Bearer "):
-            return auth_header.split(" ")[1]
+    if token:
+        return token
         
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return token
+    # 3. Fail if neither exists
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Not authenticated",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
