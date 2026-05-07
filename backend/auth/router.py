@@ -69,14 +69,16 @@ def login(
     token = create_access_token(subject=user.username)
     
     settings = get_settings()
+    # Auto-detect if we are in a cross-site production environment
+    origin = request.headers.get("origin", "")
+    is_cross_site = "localhost" not in origin and "127.0.0.1" not in origin and origin != ""
     
-    is_prod = settings.app_env.lower() == "production"
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=is_prod, # Must be true for samesite=none
-        samesite="none" if is_prod else "lax",
+        secure=is_cross_site or settings.app_env.lower() == "production",
+        samesite="none" if (is_cross_site or settings.app_env.lower() == "production") else "lax",
         max_age=3600 * 24 * 7 # 1 week
     )
     return {"status": "ok", "message": "Logged in successfully"}
