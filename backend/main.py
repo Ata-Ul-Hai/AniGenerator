@@ -35,12 +35,23 @@ async def lifespan(app: FastAPI):
         from sqlalchemy import text
         Base.metadata.create_all(bind=engine)
         
-        # Emergency Schema Patch: Ensure user_id exists in jobs table (Postgres strictness)
+        # Emergency Schema Patch: Ensure user_id exists in jobs table
         with engine.connect() as conn:
             try:
-                conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;"))
-                conn.commit()
-                logger.info("Database schema verified: 'user_id' column ensured in 'jobs' table.")
+                # SQLite doesn't support 'IF NOT EXISTS' for columns, so we use a different approach
+                if engine.dialect.name == "sqlite":
+                    # For SQLite, we just try to add it and let it fail if it exists (but silently)
+                    try:
+                        conn.execute(text("ALTER TABLE jobs ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;"))
+                        conn.commit()
+                        logger.info("Local SQLite: 'user_id' column added.")
+                    except:
+                        pass # Column already exists
+                else:
+                    # Postgres supports the clean 'IF NOT EXISTS'
+                    conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;"))
+                    conn.commit()
+                    logger.info("Database schema verified: 'user_id' column ensured in 'jobs' table.")
             except Exception as e:
                 logger.warning(f"Schema Patch Note: {e} (This is usually fine if column already exists)")
         

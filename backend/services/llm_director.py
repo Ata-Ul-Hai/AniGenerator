@@ -411,25 +411,48 @@ def _get_gemini_client() -> genai.Client:
 
 
 def _generate_with_gemini(prompt: str) -> str:
-    """Generate content from Gemini and return raw text output."""
+    """Generate content from Gemini and return raw text output with retry logic."""
 
     settings = get_settings()
     client = _get_gemini_client()
-    response = client.models.generate_content(
-        model=settings.gemini_model,
-        contents=prompt,
-    )
-    text = _response_to_text(response)
+    
+    max_retries = 3
+    import time
+    from google.api_core import exceptions
+    
+    for attempt in range(max_retries):
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+            )
+            text = _response_to_text(response)
+            
+            # Guard against unexpectedly large responses
+            if len(text) > _MAX_RESPONSE_CHARS:
+                logger.warning(
+                    "Gemini response truncated from %s to %s chars",
+                    len(text), _MAX_RESPONSE_CHARS,
+                )
+                text = text[:_MAX_RESPONSE_CHARS]
+                
+            return text
+            
+        except exceptions.ResourceExhausted as e:
+            if attempt < max_retries - 1:
+                wait_time = (attempt + 1) * 2 # 2s, 4s...
+                logger.warning(f"Gemini Rate Limit hit. Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+                continue
+            raise
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Gemini request failed: {e}. Retrying...")
+                time.sleep(1)
+                continue
+            raise
 
-    # Guard against unexpectedly large responses
-    if len(text) > _MAX_RESPONSE_CHARS:
-        logger.warning(
-            "Gemini response truncated from %s to %s chars",
-            len(text), _MAX_RESPONSE_CHARS,
-        )
-        text = text[:_MAX_RESPONSE_CHARS]
-
-    return text
+    return "" # Should not reach here
 
 
 def generate_scenes(
