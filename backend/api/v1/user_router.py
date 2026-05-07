@@ -76,7 +76,7 @@ def generate(
 ):
     """Queue a video generation (Admins have unlimited quota)."""
     
-    # 1. Quota Check (Bypassed for Admins)
+    # 1. Quota Check (Bypassed ONLY for Admins)
     if not current_user.is_admin:
         completed_count = crud.count_user_completed_jobs_last_24h(db, current_user.id)
         if completed_count >= 1:
@@ -84,10 +84,9 @@ def generate(
                 status_code=429, 
                 detail="You have reached your daily limit (1 successful video per 24h). Please try again later."
             )
-        
-        # Enforce 8-scene limit for normal users
-        request.max_scenes = min(request.max_scenes or 8, 8)
-
+    
+    # max_scenes is strictly 8 for everyone via the Pydantic model above.
+    
     job_id = uuid.uuid4().hex
     crud.create_job(db, job_id, user_id=current_user.id, max_scenes=request.max_scenes or 8)
     
