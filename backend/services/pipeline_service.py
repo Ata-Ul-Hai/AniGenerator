@@ -23,6 +23,8 @@ from backend.services.llm_director import generate_scenes
 from backend.services.parser import chunk_text, smart_sample_text
 from backend.services.storage_service import get_storage_provider
 
+from threading import BoundedSemaphore, Lock
+
 logger = logging.getLogger(__name__)
 
 # ── ENGINE INITIALIZATION ──────────────────────────────────────────────────
@@ -33,6 +35,8 @@ _JOB_EXECUTOR = ThreadPoolExecutor(
     thread_name_prefix="job",
 )
 _RENDER_LIMITER = BoundedSemaphore(value=_settings.max_concurrent_renders)
+# Global lock to prevent simultaneous binary launches (prevents ETXTBSY)
+_LAUNCH_LOCK = Lock()
 
 @contextmanager
 def _timed_stage(job_id: str, stage: str) -> Any:
@@ -172,12 +176,22 @@ def _render_scene_group(
     ]
 
     try:
-        subprocess.run(command, cwd=renderer_dir, check=True, capture_output=True, text=True)
+        # Use Global Launch Lock to prevent ETXTBSY
+        with _LAUNCH_LOCK:
+            logger.info("job_id=%s chunk=%s status=launching_engine", job_id, group_idx)
+            # Short sleep inside lock to ensure OS has fully released the binary from any previous run
+            import time
+            time.sleep(0.5) 
+            subprocess.run(command, cwd=renderer_dir, check=True, capture_output=True, text=True)
+        
+        # Verify chunk integrity immediately
+        if not output_path.exists() or output_path.stat().st_size < 1000:
+            raise RuntimeError(f"Chunk {group_idx} generated an empty or invalid video file.")
+            
     except subprocess.CalledProcessError as e:
-        # Capture the actual error output from Node.js/Remotion
-        error_msg = e.stderr.strip().split('\n')[-3:] # Get last 3 lines
+        error_msg = e.stderr.strip().split('\n')[-3:] 
         logger.error("Remotion render failed (chunk %s). Stderr: %s", group_idx, e.stderr)
-        raise RuntimeError(f"Render Engine Error: {' | '.join(error_msg)}") from e
+        raise RuntimeError(f"Render Engine Error (Chunk {group_idx}): {' | '.join(error_msg)}") from e
     return output_path
 
 def _stitch_videos_ffmpeg(chunk_videos: list[Path], output_path: Path) -> None:
@@ -198,26 +212,28 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
         tmp = Path(tmp_dir)
         chunk_videos: dict[int, Path] = {}
 
-        # Use ThreadPoolExecutor but launch them with a tiny delay to avoid ETXTBSY
         with ThreadPoolExecutor(max_workers=n_groups) as pool:
             futures = {}
             for i, g in enumerate(groups):
                 if not g: continue
-                # Staggered launch: Wait 2 seconds between each worker
+                # Staggered launch to reduce lock contention
                 if i > 0:
-                    time.sleep(2.0)
+                    time.sleep(1.0)
                 futures[pool.submit(_render_scene_group, i, g, job_id, renderer_dir, tmp, concurrency=2)] = i
             
             for future in as_completed(futures):
-                chunk_videos[futures[future]] = future.result()
+                try:
+                    chunk_videos[futures[future]] = future.result()
+                except Exception as e:
+                    logger.error(f"Render job {job_id} aborted due to chunk failure: {e}")
+                    raise
 
         ordered_chunks = [chunk_videos[i] for i in sorted(chunk_videos)]
         stitch_local = tmp / "stitched.mp4"
         _stitch_videos_ffmpeg(ordered_chunks, stitch_local)
         
-        # Verify final file
-        if not stitch_local.exists() or stitch_local.stat().st_size < 1000:
-            raise RuntimeError("Render Engine Error: Generated video is empty or missing.")
+        if not stitch_local.exists() or stitch_local.stat().st_size < 5000:
+            raise RuntimeError("Render Engine Error: Final video is empty or missing.")
 
         remote_path = f"runs/{output_filename}"
         accessible_url = _storage.upload_file(stitch_local, remote_path)
@@ -241,6 +257,10 @@ def _background_job_worker(job_id: str, user_id: int | None, text: str, max_sc: 
         crud.set_job_completed(db, job_id)
     except Exception as exc:
         logger.exception("Job %s failed", job_id)
-        crud.set_job_failed(db, job_id, str(exc))
+        # Store detailed error message in DB
+        error_msg = str(exc)
+        if "Render Engine Error" in error_msg:
+             error_msg = f"Video Engine Failure: {error_msg}"
+        crud.set_job_failed(db, job_id, error_msg)
     finally:
         db.close()
