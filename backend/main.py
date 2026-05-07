@@ -31,7 +31,19 @@ async def lifespan(app: FastAPI):
     """Modern lifespan handler replacing deprecated on_event."""
     settings = get_settings()
     if settings.auto_create_tables:
-        create_all_tables()
+        from backend.db.database import Base, engine
+        from sqlalchemy import text
+        Base.metadata.create_all(bind=engine)
+        
+        # Emergency Schema Patch: Ensure user_id exists in jobs table (Postgres strictness)
+        with engine.connect() as conn:
+            try:
+                conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;"))
+                conn.commit()
+                logger.info("Database schema verified: 'user_id' column ensured in 'jobs' table.")
+            except Exception as e:
+                logger.warning(f"Schema Patch Note: {e} (This is usually fine if column already exists)")
+        
         from scripts.seed_admin import seed_admin
         seed_admin() # Ensure admin exists with the secret password
         logger.info("Auto-created database tables and verified admin user at startup")
