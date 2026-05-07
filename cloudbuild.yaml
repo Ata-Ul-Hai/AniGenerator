@@ -23,7 +23,7 @@ steps:
       '--allow-unauthenticated',
       '--timeout', '3600',
       '--max-instances', '1',
-      '--min-instances', '1',
+      '--min-instances', '0',
       '--memory', '8Gi',
       '--cpu', '4',
       '--no-cpu-throttling',

@@ -278,7 +278,7 @@ const AdminPanel: React.FC = () => {
                       )}
                     </td>
                     <td className="px-6 py-4 text-sm text-zinc-500">
-                      {new Date(u.created_at).toLocaleDateString()}
+                      {u.created_at === "Unknown" ? "Unknown" : new Date(u.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex justify-end gap-2">
