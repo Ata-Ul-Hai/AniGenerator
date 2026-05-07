@@ -81,7 +81,12 @@ def login(
         samesite="none" if (is_cross_site or settings.app_env.lower() == "production") else "lax",
         max_age=3600 * 24 * 7 # 1 week
     )
-    return {"status": "ok", "message": "Logged in successfully"}
+    return {
+        "status": "ok", 
+        "access_token": token,
+        "token_type": "bearer",
+        "message": "Logged in successfully"
+    }
 
 @router.post("/logout")
 def logout(response: Response):
