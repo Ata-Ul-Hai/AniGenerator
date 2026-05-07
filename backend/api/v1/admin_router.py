@@ -37,7 +37,10 @@ def get_users(
 ):
     """List all registered users for moderation."""
     users = crud.list_users(db)
-    # Convert datetime to string for response
+    # Safely convert datetimes to string
+    def safe_iso(dt):
+        return dt.isoformat() if dt else "Unknown"
+
     return [
         UserResponse(
             id=u.id,
@@ -45,7 +48,7 @@ def get_users(
             email=u.email,
             is_admin=u.is_admin,
             is_beta_authorized=u.is_beta_authorized,
-            created_at=u.created_at.isoformat()
+            created_at=safe_iso(u.created_at)
         ) for u in users
     ]
 
@@ -109,7 +112,7 @@ def create_user_direct(
         email=new_user.email,
         is_admin=new_user.is_admin,
         is_beta_authorized=new_user.is_beta_authorized,
-        created_at=new_user.created_at.isoformat()
+        created_at=new_user.created_at.isoformat() if new_user.created_at else "Unknown"
     )
 
 @router.get("/jobs")
@@ -127,13 +130,19 @@ def get_stats(
     _admin: User = Depends(require_admin)
 ):
     """Global system metrics."""
-    jobs = crud.list_jobs(db, limit=500)
-    
-    stats = {
-        "total_users": db.query(User).count(),
-        "beta_users": db.query(User).filter(User.is_beta_authorized == True).count(),
-        "total_jobs": len(jobs),
-        "failed_jobs": sum(1 for j in jobs if j.status == "failed"),
-        "completed_jobs": sum(1 for j in jobs if j.status == "completed"),
-    }
-    return stats
+    try:
+        jobs = crud.list_jobs(db, limit=500)
+        
+        stats = {
+            "total_users": db.query(User).count(),
+            "beta_users": db.query(User).filter(User.is_beta_authorized == True).count(),
+            "total_jobs": len(jobs),
+            "failed_jobs": sum(1 for j in jobs if j.status == "failed"),
+            "completed_jobs": sum(1 for j in jobs if j.status == "completed"),
+        }
+        return stats
+    except Exception as e:
+        # Catch and log the error instead of returning 500
+        import logging
+        logging.error(f"Stats Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Database Stats Error: {str(e)}")
