@@ -129,7 +129,7 @@ def _renderer_root() -> Path:
     return Path(__file__).resolve().parent.parent / "renderer"
 
 
-@app.get("/artifacts/{path:path}")
+@app.get("/api/artifacts/{path:path}")
 async def serve_artifacts(path: str):
     """Serve artifacts from local disk (dev) or redirect to GCS (prod)."""
     settings = get_settings()
