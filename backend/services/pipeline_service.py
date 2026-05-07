@@ -189,18 +189,38 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
     renderer_dir = Path(__file__).resolve().parent.parent.parent / "renderer"
     output_filename = f"{job_id}.mp4"
     
+    import time
+    n_groups = 4
+    chunk_size = max(1, -(-len(props.scenes) // n_groups))
+    groups = [props.scenes[i: i + chunk_size] for i in range(0, len(props.scenes), chunk_size)]
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
-        # Render everything in one high-powered process to avoid ETXTBSY file locks
-        # We give it concurrency=4 so it's just as fast as before, but safer
-        rendered_mp4 = _render_scene_group(0, props.scenes, job_id, renderer_dir, tmp, concurrency=4)
+        chunk_videos: dict[int, Path] = {}
+
+        # Use ThreadPoolExecutor but launch them with a tiny delay to avoid ETXTBSY
+        with ThreadPoolExecutor(max_workers=n_groups) as pool:
+            futures = {}
+            for i, g in enumerate(groups):
+                if not g: continue
+                # Staggered launch: Wait 2 seconds between each worker
+                if i > 0:
+                    time.sleep(2.0)
+                futures[pool.submit(_render_scene_group, i, g, job_id, renderer_dir, tmp, concurrency=2)] = i
+            
+            for future in as_completed(futures):
+                chunk_videos[futures[future]] = future.result()
+
+        ordered_chunks = [chunk_videos[i] for i in sorted(chunk_videos)]
+        stitch_local = tmp / "stitched.mp4"
+        _stitch_videos_ffmpeg(ordered_chunks, stitch_local)
         
-        # Verify file integrity
-        if not rendered_mp4.exists() or rendered_mp4.stat().st_size < 1000:
-            raise RuntimeError("Render Engine Error: Generated video file is empty or missing.")
+        # Verify final file
+        if not stitch_local.exists() or stitch_local.stat().st_size < 1000:
+            raise RuntimeError("Render Engine Error: Generated video is empty or missing.")
 
         remote_path = f"runs/{output_filename}"
-        accessible_url = _storage.upload_file(rendered_mp4, remote_path)
+        accessible_url = _storage.upload_file(stitch_local, remote_path)
 
     return accessible_url
 
