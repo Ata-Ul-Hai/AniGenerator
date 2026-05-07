@@ -189,26 +189,18 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
     renderer_dir = Path(__file__).resolve().parent.parent.parent / "renderer"
     output_filename = f"{job_id}.mp4"
     
-    n = len(props.scenes)
-    n_groups = 4
-    chunk_size = max(1, -(-n // n_groups))
-    groups = [props.scenes[i: i + chunk_size] for i in range(0, n, chunk_size)]
-
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
-        chunk_videos: dict[int, Path] = {}
-
-        with ThreadPoolExecutor(max_workers=n_groups) as pool:
-            futures = {pool.submit(_render_scene_group, i, g, job_id, renderer_dir, tmp): i for i, g in enumerate(groups) if g}
-            for future in as_completed(futures):
-                chunk_videos[futures[future]] = future.result()
-
-        ordered_chunks = [chunk_videos[i] for i in sorted(chunk_videos)]
-        stitch_local = tmp / "stitched.mp4"
-        _stitch_videos_ffmpeg(ordered_chunks, stitch_local)
+        # Render everything in one high-powered process to avoid ETXTBSY file locks
+        # We give it concurrency=4 so it's just as fast as before, but safer
+        rendered_mp4 = _render_scene_group(0, props.scenes, job_id, renderer_dir, tmp, concurrency=4)
         
+        # Verify file integrity
+        if not rendered_mp4.exists() or rendered_mp4.stat().st_size < 1000:
+            raise RuntimeError("Render Engine Error: Generated video file is empty or missing.")
+
         remote_path = f"runs/{output_filename}"
-        accessible_url = _storage.upload_file(stitch_local, remote_path)
+        accessible_url = _storage.upload_file(rendered_mp4, remote_path)
 
     return accessible_url
 
