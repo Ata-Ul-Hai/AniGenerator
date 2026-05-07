@@ -13,10 +13,7 @@ const LoginPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const response = await api.post('/auth/login', { username, password });
-      if (response.data.access_token) {
-        localStorage.setItem('token', response.data.access_token);
-      }
+      await api.post('/auth/login', { username, password });
       await checkAuth();
       navigate('/dashboard');
     } catch (err: any) {

@@ -40,7 +40,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (error) {
       console.error('Logout failed', error);
     } finally {
-      localStorage.removeItem('token');
       setUser(null);
     }
   };
