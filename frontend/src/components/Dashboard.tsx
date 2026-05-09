@@ -26,6 +26,10 @@ const MAX_POLL_ATTEMPTS = 200; // ~10 minutes at 3s intervals
 const MAX_CLIENT_FILE_SIZE_MB = 20;
 const ACCEPTED_FILE_TYPES = ".pdf,.docx,.txt";
 
+/** Resolves a video path to a full URL, handling both absolute and relative paths. */
+const resolveVideoUrl = (path: string) =>
+  path.startsWith("http") ? path : `/api/${path.replace(/^\//, "")}`;
+
 const Dashboard: React.FC<Props> = ({ onLogout }) => {
   const { user, checkAuth } = useAuth();
   const [file, setFile] = useState<File | null>(null);
@@ -39,8 +43,6 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollCountRef = useRef(0);
-
-  const API_BASE_URL = "/api";
 
   // Check onboarding status
   useEffect(() => {
@@ -376,7 +378,7 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
               </div>
               {job?.video_path && (
                 <a 
-                  href={job.video_path.startsWith('http') ? job.video_path : `${API_BASE_URL}/${job.video_path.replace(/^\//, '')}`}
+                  href={resolveVideoUrl(job.video_path)}
                   target="_blank" rel="noreferrer"
                   className="text-[10px] font-bold uppercase tracking-widest text-accent-blue hover:text-white transition-colors flex items-center gap-1.5"
                 >
@@ -387,7 +389,7 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
             
             <div className="flex-1 bg-[#050505] relative flex items-center justify-center">
               {job?.video_path ? (
-                <video src={job.video_path.startsWith('http') ? job.video_path : `${API_BASE_URL}/${job.video_path.replace(/^\//, '')}`} controls className="w-full h-full object-contain" />
+                <video src={resolveVideoUrl(job.video_path)} controls className="w-full h-full object-contain" />
               ) : (
                 <div className="flex flex-col items-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center justify-center border-dashed">

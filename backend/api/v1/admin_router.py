@@ -30,6 +30,9 @@ class UserCreateAdmin(BaseModel):
     is_admin: bool = False
     is_beta_authorized: bool = True
 
+class ApproveUserRequest(BaseModel):
+    authorized: bool
+
 @router.get("/users", response_model=list[UserResponse])
 def get_users(
     db: Session = Depends(get_db),
@@ -52,15 +55,15 @@ def get_users(
         ) for u in users
     ]
 
-@router.post("/users/{user_id}/approve")
+@router.put("/users/{user_id}/approve")
 def approve_user(
     user_id: int,
-    authorized: bool = True,
+    body: ApproveUserRequest,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin)
 ):
     """Grant or revoke beta access to a user."""
-    user = crud.update_user_beta_access(db, user_id, authorized)
+    user = crud.update_user_beta_access(db, user_id, body.authorized)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {"status": "ok", "is_beta_authorized": user.is_beta_authorized}
@@ -106,14 +109,7 @@ def create_user_direct(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    return UserResponse(
-        id=new_user.id,
-        username=new_user.username,
-        email=new_user.email,
-        is_admin=new_user.is_admin,
-        is_beta_authorized=new_user.is_beta_authorized,
-        created_at=new_user.created_at.isoformat() if new_user.created_at else "Unknown"
-    )
+    return UserResponse.model_validate(new_user)
 
 @router.get("/jobs")
 def get_all_jobs(
