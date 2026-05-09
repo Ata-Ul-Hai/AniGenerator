@@ -1,9 +1,11 @@
 import React, {useMemo, useRef, useEffect, useState} from 'react';
 import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
+import {Lottie, type LottieAnimationData} from '@remotion/lottie';
 import rough from 'roughjs';
 
 type SvgDrawerProps = {
   svgContent: string;
+  svgPath: string;  // Added: to detect lottie:// prefix
   drawDurationFrames: number;
   sceneDurationFrames: number;
 };
@@ -108,17 +110,102 @@ const RoughElement: React.FC<{
   );
 };
 
-export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFrames, sceneDurationFrames}) => {
+// Lottie renderer component
+const LottieRenderer: React.FC<{
+  lottieJson: LottieAnimationData;
+  drawDurationFrames: number;
+  sceneDurationFrames: number;
+}> = ({lottieJson, drawDurationFrames, sceneDurationFrames}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
+  // Calculate animation progress
+  // Lottie should play during drawDurationFrames, then hold
+  const progress = Math.min(1, frame / drawDurationFrames);
+  
+  // Scene fade in/out
+  const sceneOpacity = interpolate(
+    frame,
+    [0, 10, Math.max(11, sceneDurationFrames - 15), sceneDurationFrames],
+    [0, 1, 1, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
+  );
+
+  // Entrance scale effect
+  const entranceSpring = spring({fps, frame, config: {damping: 100, stiffness: 50}});
+
+  return (
+    <AbsoluteFill style={{
+      backgroundColor: '#fdfdfd',
+      backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
+      backgroundSize: '40px 40px',
+      opacity: sceneOpacity,
+    }}>
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: `scale(${0.95 + entranceSpring * 0.05})`,
+      }}>
+        <div style={{width: '80%', height: '80%'}}>
+          <Lottie
+            animationData={lottieJson}
+            playbackRate={1}
+            style={{width: '100%', height: '100%'}}
+          />
+        </div>
+      </div>
+    </AbsoluteFill>
+  );
+};
+
+export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, svgPath, drawDurationFrames, sceneDurationFrames}) => {
+  const frame = useCurrentFrame();
+  const {fps} = useVideoConfig();
+
+  // Check if this is a Lottie asset
+  const isLottie = svgPath?.startsWith('lottie://');
+  
+  // Parse Lottie JSON if applicable
+  const lottieData = useMemo((): LottieAnimationData | null => {
+    if (isLottie && svgContent) {
+      try {
+        const parsed = JSON.parse(svgContent);
+        // Validate required Lottie fields
+        if (parsed && typeof parsed === 'object' && 'fr' in parsed && 'w' in parsed && 'h' in parsed && 'op' in parsed) {
+          return parsed as LottieAnimationData;
+        }
+        return null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [isLottie, svgContent]);
+
+  // If Lottie and we have valid JSON, render with Lottie
+  if (isLottie && lottieData) {
+    return (
+      <LottieRenderer
+        lottieJson={lottieData}
+        drawDurationFrames={drawDurationFrames}
+        sceneDurationFrames={sceneDurationFrames}
+      />
+    );
+  }
+
+  // Original SVG rendering with roughjs
   const allNodes = useMemo(() => parseSvgNodes(svgContent || ''), [svgContent]);
   const viewBox = useMemo(() => extractViewBox(svgContent || ''), [svgContent]);
 
   const entranceSpring = spring({fps, frame, config: {damping: 100, stiffness: 50}});
-  const sceneOpacity = interpolate(frame,
+  const sceneOpacity = interpolate(
+    frame,
     [0, 10, Math.max(11, sceneDurationFrames - 15), sceneDurationFrames],
-    [0, 1, 1, 0], {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'});
+    [0, 1, 1, 0],
+    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
+  );
 
   return (
     <AbsoluteFill style={{
