@@ -110,43 +110,33 @@ def recover_incomplete_jobs(db: Session, reason: str) -> int:
     return int(updated or 0)
 
 
-def set_job_running(db: Session, job_id: str) -> None:
+def _set_job_status(db: Session, job_id: str, status: str, error: str | None = None) -> None:
+    """Private helper: fetch job, update status/error/timestamp, commit."""
     job = db.get(Job, job_id)
     if not job:
-        logger.error("set_job_running: job %s not found — state transition skipped", job_id)
+        logger.error("_set_job_status: job %s not found — state transition skipped", job_id)
         return
-    job.status = "running"
+    job.status = status
+    if error is not None:
+        job.error = error
     job.updated_at = datetime.now(timezone.utc)
     db.commit()
+
+
+def set_job_running(db: Session, job_id: str) -> None:
+    _set_job_status(db, job_id, "running")
 
 
 def set_job_completed(db: Session, job_id: str) -> None:
-    job = db.get(Job, job_id)
-    if not job:
-        logger.error("set_job_completed: job %s not found — state transition skipped", job_id)
-        return
-    job.status = "completed"
-    job.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    _set_job_status(db, job_id, "completed")
 
 
 def set_job_failed(db: Session, job_id: str, error: str) -> None:
-    job = db.get(Job, job_id)
-    if not job:
-        logger.error("set_job_failed: job %s not found — state transition skipped", job_id)
-        return
-    job.status = "failed"
-    job.error = error
-    job.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    _set_job_status(db, job_id, "failed", error=error)
 
 
 def update_job_status(db: Session, job_id: str, status: str) -> None:
-    job = db.get(Job, job_id)
-    if job:
-        job.status = status
-        job.updated_at = datetime.now(timezone.utc)
-        db.commit()
+    _set_job_status(db, job_id, status)
 
 
 # ── Scenes ────────────────────────────────────────────────────────────────────
@@ -161,6 +151,7 @@ def create_scenes(db: Session, job_id: str, choreography_scenes: list[dict]) -> 
             svg_markup=s.get("svg_content", ""),
             metaphor_hint=s.get("metaphor_hint", ""),
             audio_path=s.get("audio_path", ""),
+            svg_path=s.get("svg_path", ""),
             audio_duration_ms=s.get("audio_duration_ms", 0),
             draw_duration_ms=s.get("draw_duration_ms", 0),
         )

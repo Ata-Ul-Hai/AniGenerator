@@ -64,6 +64,10 @@ dist/
 .next/
 .cache/
 
+# Testing
+.hypothesis/
+.pytest_cache/
+
 # Kiro
 .kiro/
 .kiro_analysis_notes.md

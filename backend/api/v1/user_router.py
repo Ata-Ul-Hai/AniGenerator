@@ -117,12 +117,13 @@ def get_job(
                 svg_markup=s.svg_markup,
                 metaphor_hint=s.metaphor_hint,
                 audio_path=s.audio_path,
-                svg_path=f"inline://scene_{s.scene_index}.svg",
+                # Read persisted svg_path; fall back for legacy rows with no value
+                svg_path=s.svg_path or f"inline://scene_{s.scene_index}.svg",
                 svg_content=s.svg_markup,
                 audio_duration_ms=int(s.audio_duration_ms or 0),
                 draw_duration_ms=int(s.draw_duration_ms or 0),
                 draw_start_ms=0,
-                hold_ms=int((s.audio_duration_ms or 0) - (s.draw_duration_ms or 0))
+                hold_ms=max(0, int((s.audio_duration_ms or 0) - (s.draw_duration_ms or 0)))
             ) for s in scenes
         ])
 
