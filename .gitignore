@@ -63,3 +63,7 @@ dist/
 # Build outputs
 .next/
 .cache/
+
+# Kiro
+.kiro/
+.kiro_analysis_notes.md
