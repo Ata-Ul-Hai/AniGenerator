@@ -27,6 +27,24 @@ from threading import BoundedSemaphore, Lock
 
 logger = logging.getLogger(__name__)
 
+
+def _get_scene_generator():
+    """
+    Get the appropriate scene generator based on settings.
+    
+    Returns generate_enhanced_scenes if use_multi_model_director is True,
+    otherwise returns the standard generate_scenes.
+    
+    Note: generate_scenes returns list[SceneScript], 
+    generate_enhanced_scenes returns list[SceneChoreography]
+    """
+    settings = get_settings()
+    if settings.use_multi_model_director:
+        from backend.services.multi_model_director import generate_enhanced_scenes
+        return generate_enhanced_scenes
+    return generate_scenes
+
+
 # ── ENGINE INITIALIZATION ──────────────────────────────────────────────────
 _settings = get_settings()
 _storage = get_storage_provider(_settings)
@@ -48,17 +66,41 @@ def _timed_stage(job_id: str, stage: str) -> Any:
         logger.info("perf job_id=%s stage=%s duration_ms=%s", job_id, stage, duration_ms)
 
 def _synthesize_scene_choreography(
-    scene: SceneScript, 
-    audio_dir: Path, 
-    run_token: str
+    scene: SceneScript,
+    audio_dir: Path,
+    run_token: str,
+    enhanced: SceneChoreography | None = None,
 ) -> SceneChoreography:
-    """Synthesize audio and upload to storage."""
+    """Synthesize audio and return a fully-populated SceneChoreography.
+
+    When `enhanced` is provided (multi-model path), its svg/timing data is
+    preserved and only the audio is freshly synthesized.
+    When `enhanced` is None (classic path), svg is fetched from Iconify and
+    timing is calculated from element count.
+    """
     audio_filename = f"scene_{scene.scene_id}.mp3"
     audio_abs_path = audio_dir / audio_filename
     duration_ms = synthesize(scene.narration, str(audio_abs_path))
     remote_path = f"runs/{run_token}/audio/{audio_filename}"
     accessible_url = _storage.upload_file(audio_abs_path, remote_path)
-    
+
+    if enhanced:
+        # Multi-model path: carry over pre-computed assets and timing
+        return SceneChoreography(
+            scene_id=scene.scene_id,
+            narration=scene.narration,
+            svg_markup=enhanced.svg_markup,
+            metaphor_hint=enhanced.metaphor_hint,
+            audio_path=accessible_url,
+            svg_path=enhanced.svg_path,
+            svg_content=enhanced.svg_content,
+            audio_duration_ms=duration_ms,
+            draw_start_ms=enhanced.draw_start_ms,
+            draw_duration_ms=enhanced.draw_duration_ms,
+            hold_ms=enhanced.hold_ms,
+        )
+
+    # Classic path: fetch icon + calculate timing from element count
     settings = get_settings()
     keyword = keyword_from_hint(scene.metaphor_hint)
     raw_svg = fetch_icon_svg(keyword, settings.iconify_base_url)
@@ -93,6 +135,17 @@ def _synthesize_scene_choreography(
         hold_ms=hold_ms,
     )
 
+def _synthesize_for_duration(
+    scene: SceneScript,
+    audio_dir: Path,
+) -> tuple[int, str]:
+    """Synthesize audio just to get duration. Returns (duration_ms, audio_path)."""
+    audio_filename = f"scene_{scene.scene_id}_temp.mp3"
+    audio_abs_path = audio_dir / audio_filename
+    duration_ms = synthesize(scene.narration, str(audio_abs_path))
+    return duration_ms, str(audio_abs_path)
+
+
 def _generate_render_props_internal(
     extracted_text: str,
     max_scenes: int,
@@ -115,18 +168,69 @@ def _generate_render_props_internal(
         audio_dir = Path(tmp_dir) / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
 
+        # First pass: Generate scene scripts (narration only)
+        # Note: generate_scenes returns list[SceneScript], generate_enhanced_scenes returns list[SceneChoreography]
+        # Both work because SceneChoreography extends SceneScript
         raw_scenes: list[SceneScript] = []
+        scene_generator = _get_scene_generator()
         for chunk_index, chunk in enumerate(chunks, start=1):
             if len(raw_scenes) >= max_scenes:
                 break
-            generated = generate_scenes(chunk, max_scenes - len(raw_scenes), max_words_per_narration)
+            generated = scene_generator(chunk, max_scenes - len(raw_scenes), max_words_per_narration)
             raw_scenes.extend(generated)
 
-        choreography_scenes: list[SceneChoreography] = []
+        # Step 1: Synthesize TTS FIRST to get audio durations
+        # This is needed for Lottie hold time calculations
+        audio_durations: dict[int, int] = {}
         with ThreadPoolExecutor(max_workers=4) as tts_pool:
-            futures = [tts_pool.submit(_synthesize_scene_choreography, scene, audio_dir, run_id) for scene in raw_scenes]
+            futures = {
+                tts_pool.submit(_synthesize_for_duration, scene, audio_dir): scene 
+                for scene in raw_scenes
+            }
             for future in as_completed(futures):
-                choreography_scenes.append(future.result())
+                scene = futures[future]
+                duration_ms, _ = future.result()
+                audio_durations[scene.scene_id] = duration_ms
+
+        # Step 2: If using multi-model director, regenerate with audio durations
+        # for proper Lottie hold time calculations
+        if settings.use_multi_model_director:
+            try:
+                from backend.services.multi_model_director import generate_enhanced_scenes
+                # Regenerate with known audio durations
+                enhanced_scenes = generate_enhanced_scenes(
+                    sampled_text, 
+                    max_scenes, 
+                    max_words_per_narration,
+                    audio_durations=audio_durations
+                )
+                # Now synthesize audio for enhanced scenes
+                choreography_scenes = []
+                for scene in raw_scenes:
+                    # Find matching enhanced scene by scene_id
+                    enhanced = next((s for s in enhanced_scenes if s.scene_id == scene.scene_id), None)
+                    if enhanced:
+                        # Multi-model path: merged function handles enhanced assets
+                        choreo = _synthesize_scene_choreography(scene, audio_dir, run_id, enhanced=enhanced)
+                        choreography_scenes.append(choreo)
+                    else:
+                        # Fallback
+                        choreo = _synthesize_scene_choreography(scene, audio_dir, run_id)
+                        choreography_scenes.append(choreo)
+            except Exception as e:
+                logger.warning(f"Enhanced scene generation failed, using fallback: {e}")
+                choreography_scenes = []
+                with ThreadPoolExecutor(max_workers=4) as tts_pool:
+                    futures = [tts_pool.submit(_synthesize_scene_choreography, scene, audio_dir, run_id) for scene in raw_scenes]
+                    for future in as_completed(futures):
+                        choreography_scenes.append(future.result())
+        else:
+            # Original flow for non-multi-model mode
+            choreography_scenes = []
+            with ThreadPoolExecutor(max_workers=4) as tts_pool:
+                futures = [tts_pool.submit(_synthesize_scene_choreography, scene, audio_dir, run_id) for scene in raw_scenes]
+                for future in as_completed(futures):
+                    choreography_scenes.append(future.result())
 
         choreography_scenes.sort(key=lambda s: s.scene_id)
         props = RenderProps(scenes=choreography_scenes)
