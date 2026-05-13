@@ -79,7 +79,8 @@ _FILLER_WORDS = frozenset({
     "visual", "visually", "metaphor", "of", "for", "with", "as", "in",
     "on", "at", "by", "to", "from", "is", "are", "concept", "concepts", "idea", "ideas",
     "notion", "notions", "illustration", "image", "icon", "symbol", "diagram",
-    "showing", "showing", "demonstrates", "demonstrated",
+    "showing", "showing", "demonstrates", "demonstrated", "scene", "scenes",
+    "step", "steps", "internal", "mechanism", "mechanisms",
 })
 
 
