@@ -5,7 +5,6 @@ import {slide} from '@remotion/transitions/slide';
 
 import {Subtitles} from './components/Subtitles';
 import {SvgDrawer} from './components/SvgDrawer';
-import {LottieDrawer} from './components/LottieDrawer';
 import type {RenderProps, SceneChoreography} from './types';
 import {TRANSITION_MS} from './types';
 
@@ -23,23 +22,13 @@ const SceneLayer: React.FC<{
   sceneDurationFrames: number;
   drawDurationFrames: number;
 }> = ({scene, sceneDurationFrames, drawDurationFrames}) => {
-  const isLottie = scene.svg_path.startsWith('lottie://');
-
   return (
     <AbsoluteFill>
-      {isLottie ? (
-        <LottieDrawer
-          lottieJson={scene.svg_content}
-          drawDurationFrames={drawDurationFrames}
-          sceneDurationFrames={sceneDurationFrames}
-        />
-      ) : (
-        <SvgDrawer
-          svgContent={scene.svg_content}
-          drawDurationFrames={drawDurationFrames}
-          sceneDurationFrames={sceneDurationFrames}
-        />
-      )}
+      <SvgDrawer
+        svgContent={scene.svg_content}
+        drawDurationFrames={drawDurationFrames}
+        sceneDurationFrames={sceneDurationFrames}
+      />
       <Subtitles narration={scene.narration} sceneDurationFrames={sceneDurationFrames} />
       <Audio src={toStaticAsset(scene.audio_path)} />
     </AbsoluteFill>

@@ -9,7 +9,6 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@remotion/lottie": "^4.0.459",
     "@remotion/transitions": "4.0.443",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
