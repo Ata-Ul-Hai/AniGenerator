@@ -46,9 +46,9 @@ class Settings(BaseSettings):
     # ── MULTI-MODEL ANIMATION DIRECTOR ───────────────────────────────────────
     use_multi_model_director: bool = Field(default=False, alias="USE_MULTI_MODEL_DIRECTOR")
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    cerebras_api_key: str = Field(default="", alias="CEREBRAS_API_KEY")
     visual_validation_threshold: float = Field(default=0.6, alias="VISUAL_VALIDATION_THRESHOLD")
-    lottiefiles_cache_ttl_seconds: int = Field(default=3600, alias="LOTTIEFILES_CACHE_TTL_SECONDS")
-    lottiefiles_base_url: str = Field(default="https://lottiefiles.com/api", alias="LOTTIEFILES_BASE_URL")
+    illustration_cache_ttl_seconds: int = Field(default=3600, alias="ILLUSTRATION_CACHE_TTL_SECONDS")
 
     # ── PRODUCTION ASSETS ────────────────────────────────────────────────────
     gcs_bucket_name: str | None = Field(default=None, alias="GCS_BUCKET_NAME")

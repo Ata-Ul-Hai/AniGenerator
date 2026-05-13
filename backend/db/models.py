@@ -71,7 +71,7 @@ class Scene(Base):
     svg_markup: Mapped[str] = mapped_column(Text, default="")
     metaphor_hint: Mapped[str] = mapped_column(Text, default="")
     audio_path: Mapped[str] = mapped_column(String(512), default="")
-    svg_path: Mapped[str] = mapped_column(String(512), default="")    # lottie:// or inline://
+    svg_path: Mapped[str] = mapped_column(String(512), default="")    # illustration:// or inline://
     audio_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
     draw_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
 
