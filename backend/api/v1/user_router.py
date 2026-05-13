@@ -57,14 +57,21 @@ def upload(
         tmp_path = Path(tmp.name)
 
     try:
-        # Enforce 20MB limit
-        size_mb = tmp_path.stat().st_size / (1024 * 1024)
+        size_bytes = tmp_path.stat().st_size
+        if size_bytes == 0:
+            raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+        size_mb = size_bytes / (1024 * 1024)
         if size_mb > 20: # Strictly 20MB
             raise HTTPException(status_code=413, detail="File too large (Max 20MB)")
 
-        extracted = extract_text(str(tmp_path), max_file_size_mb=20)
-        chunks = chunk_text(extracted)
-        return UploadResponse(extracted_text=extracted, chunk_count=len(chunks))
+        try:
+            extracted = extract_text(str(tmp_path), max_file_size_mb=20)
+            chunks = chunk_text(extracted)
+            return UploadResponse(extracted_text=extracted, chunk_count=len(chunks))
+        except ValueError as ve:
+            # Handle "Document contains no extractable text" or other parser errors
+            raise HTTPException(status_code=400, detail=str(ve))
     finally:
         tmp_path.unlink(missing_ok=True)
 

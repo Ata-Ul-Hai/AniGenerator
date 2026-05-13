@@ -168,15 +168,15 @@ def _generate_render_props_internal(
         audio_dir = Path(tmp_dir) / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
 
-        # First pass: Generate scene scripts (narration only)
-        # Note: generate_scenes returns list[SceneScript], generate_enhanced_scenes returns list[SceneChoreography]
-        # Both work because SceneChoreography extends SceneScript
+        # First pass: Generate scene scripts (narration only) using the base Gemini director.
+        # Always use generate_scenes here regardless of multi-model mode — we only need
+        # narrations to drive TTS at this stage. generate_enhanced_scenes runs in the
+        # second pass below (once audio durations are known) so it is never called twice.
         raw_scenes: list[SceneScript] = []
-        scene_generator = _get_scene_generator()
         for chunk_index, chunk in enumerate(chunks, start=1):
             if len(raw_scenes) >= max_scenes:
                 break
-            generated = scene_generator(chunk, max_scenes - len(raw_scenes), max_words_per_narration)
+            generated = generate_scenes(chunk, max_scenes - len(raw_scenes), max_words_per_narration)
             raw_scenes.extend(generated)
 
         # Step 1: Synthesize TTS FIRST to get audio durations

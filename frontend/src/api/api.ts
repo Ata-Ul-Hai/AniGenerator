@@ -13,8 +13,11 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Avoid redirect loop if already on login page
-      if (!window.location.pathname.startsWith('/login')) {
+      // Don't redirect if this was a background auth check or we're already on login/signup
+      const isAuthCheck = error.config?.url?.includes('/auth/me');
+      const isPublicPage = ['/login', '/signup', '/'].includes(window.location.pathname);
+      
+      if (!isAuthCheck && !isPublicPage) {
         window.location.href = '/login';
       }
     }

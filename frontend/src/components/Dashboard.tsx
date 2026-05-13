@@ -118,6 +118,13 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
 
   const handleExtract = async () => {
     if (!file) return;
+    
+    if (file.size === 0) {
+      setIsError(true);
+      setStatusMsg("The selected file is empty. Please choose a file with content.");
+      return;
+    }
+
     setStage("extracting");
     setIsError(false);
     setStatusMsg("Analyzing document structure...");
@@ -176,6 +183,16 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
       setStage("idle");
       setIsError(true);
       setStatusMsg(`File too large (${sizeMb.toFixed(1)} MB). Maximum is ${MAX_CLIENT_FILE_SIZE_MB} MB.`);
+      return;
+    }
+
+    if (selected.size === 0) {
+      setFile(null);
+      setExtractedText("");
+      setJob(null);
+      setStage("idle");
+      setIsError(true);
+      setStatusMsg("The selected file is empty. Please choose a file with content.");
       return;
     }
 
