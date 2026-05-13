@@ -1,19 +1,18 @@
 import React, {useMemo, useRef, useEffect, useState} from 'react';
 import {AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig} from 'remotion';
-import {Lottie, type LottieAnimationData} from '@remotion/lottie';
 import rough from 'roughjs';
 
 type SvgDrawerProps = {
   svgContent: string;
-  svgPath: string;  // Added: to detect lottie:// prefix
   drawDurationFrames: number;
   sceneDurationFrames: number;
 };
 
 type ParsedAttr = Record<string, string>;
-type PathNode = {kind: 'path' | 'line' | 'polyline' | 'polygon'; attrs: ParsedAttr};
-type FillNode = {kind: 'rect' | 'circle' | 'ellipse'; attrs: ParsedAttr};
-type ParsedNode = PathNode | FillNode;
+type ParsedNode = {
+  kind: 'path' | 'line' | 'polyline' | 'polygon' | 'rect' | 'circle' | 'ellipse';
+  attrs: ParsedAttr;
+};
 
 const parseAttrs = (attrStr: string): ParsedAttr => {
   const result: ParsedAttr = {};
@@ -32,14 +31,14 @@ const parseSvgNodes = (markup: string): ParsedNode[] => {
   while ((m = shapeRe.exec(markup)) !== null) {
     const tag = m[1].toLowerCase() as ParsedNode['kind'];
     const attrs = parseAttrs(m[2]);
-    nodes.push({kind: tag, attrs} as ParsedNode);
+    nodes.push({kind: tag, attrs});
   }
   return nodes;
 };
 
 const extractViewBox = (markup: string): string => {
   const m = markup.match(/viewBox\s*=\s*["']([^"']*)["']/i);
-  return m ? m[1] : '0 0 400 400';
+  return m ? m[1] : '0 0 400 300';
 };
 
 const RoughElement: React.FC<{
@@ -47,19 +46,21 @@ const RoughElement: React.FC<{
   progress: number;
   index: number;
 }> = ({node, progress, index}) => {
-  const svgRef = useRef<SVGGElement>(null);
   const [roughPath, setRoughPath] = useState<string>('');
 
   useEffect(() => {
     const rc = rough.svg(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
     let generator;
     
+    // Determine color: priority to stroke, then fill if it's not "none"
+    const color = node.attrs.stroke || (node.attrs.fill !== 'none' ? node.attrs.fill : '#1a1a1a');
+
     const options = {
-      stroke: node.attrs.stroke || '#000',
+      stroke: color,
       strokeWidth: 2,
-      roughness: 1.5,
+      roughness: 1.2,
       bowing: 1,
-      seed: index + 1, // Stable seed for this element
+      seed: index + 1,
     };
 
     if (node.kind === 'path') {
@@ -81,8 +82,6 @@ const RoughElement: React.FC<{
       return;
     }
 
-    // Extract the path data from the rough generated element
-    // Rough.js returns an SVGGElement containing multiple paths
     const paths = generator.querySelectorAll('path');
     let combinedPath = '';
     paths.forEach(p => {
@@ -91,111 +90,30 @@ const RoughElement: React.FC<{
     setRoughPath(combinedPath);
   }, [node, index]);
 
-  if (!roughPath) return null;
+  if (!roughPath || progress <= 0) return null;
 
   return (
     <path
       d={roughPath}
       fill="none"
-      stroke={node.attrs.stroke || '#000'}
-      strokeWidth={2.5}
+      stroke={node.attrs.stroke || '#1a1a1a'}
+      strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
       pathLength={1}
       style={{
         strokeDasharray: 1,
         strokeDashoffset: 1 - progress,
+        opacity: Math.min(1, progress * 2),
       }}
     />
   );
 };
 
-// Lottie renderer component
-const LottieRenderer: React.FC<{
-  lottieJson: LottieAnimationData;
-  drawDurationFrames: number;
-  sceneDurationFrames: number;
-}> = ({lottieJson, drawDurationFrames, sceneDurationFrames}) => {
+export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFrames, sceneDurationFrames}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  // Calculate animation progress
-  // Lottie should play during drawDurationFrames, then hold
-  const progress = Math.min(1, frame / drawDurationFrames);
-  
-  // Scene fade in/out
-  const sceneOpacity = interpolate(
-    frame,
-    [0, 10, Math.max(11, sceneDurationFrames - 15), sceneDurationFrames],
-    [0, 1, 1, 0],
-    {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
-  );
-
-  // Entrance scale effect
-  const entranceSpring = spring({fps, frame, config: {damping: 100, stiffness: 50}});
-
-  return (
-    <AbsoluteFill style={{
-      backgroundColor: '#fdfdfd',
-      backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
-      backgroundSize: '40px 40px',
-      opacity: sceneOpacity,
-    }}>
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transform: `scale(${0.95 + entranceSpring * 0.05})`,
-      }}>
-        <div style={{width: '80%', height: '80%'}}>
-          <Lottie
-            animationData={lottieJson}
-            playbackRate={1}
-            style={{width: '100%', height: '100%'}}
-          />
-        </div>
-      </div>
-    </AbsoluteFill>
-  );
-};
-
-export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, svgPath, drawDurationFrames, sceneDurationFrames}) => {
-  const frame = useCurrentFrame();
-  const {fps} = useVideoConfig();
-
-  // Check if this is a Lottie asset
-  const isLottie = svgPath?.startsWith('lottie://');
-  
-  // Parse Lottie JSON if applicable
-  const lottieData = useMemo((): LottieAnimationData | null => {
-    if (isLottie && svgContent) {
-      try {
-        const parsed = JSON.parse(svgContent);
-        // Validate required Lottie fields
-        if (parsed && typeof parsed === 'object' && 'fr' in parsed && 'w' in parsed && 'h' in parsed && 'op' in parsed) {
-          return parsed as LottieAnimationData;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }, [isLottie, svgContent]);
-
-  // If Lottie and we have valid JSON, render with Lottie
-  if (isLottie && lottieData) {
-    return (
-      <LottieRenderer
-        lottieJson={lottieData}
-        drawDurationFrames={drawDurationFrames}
-        sceneDurationFrames={sceneDurationFrames}
-      />
-    );
-  }
-
-  // Original SVG rendering with roughjs
   const allNodes = useMemo(() => parseSvgNodes(svgContent || ''), [svgContent]);
   const viewBox = useMemo(() => extractViewBox(svgContent || ''), [svgContent]);
 
@@ -209,9 +127,9 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, svgPath, drawDu
 
   return (
     <AbsoluteFill style={{
-      backgroundColor: '#fdfdfd', // Paper color
+      backgroundColor: '#fdfdfd',
       backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
-      backgroundSize: '40px 40px', // Grid look
+      backgroundSize: '50px 50px',
       opacity: sceneOpacity,
     }}>
       <div style={{
@@ -219,23 +137,26 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, svgPath, drawDu
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        transform: `scale(${0.95 + entranceSpring * 0.05})`,
+        transform: `scale(${0.9 + entranceSpring * 0.1})`,
       }}>
         <svg viewBox={viewBox} xmlns="http://www.w3.org/2000/svg"
-          style={{width: '80%', height: '80%', overflow: 'visible'}}>
+          style={{width: '75%', height: '75%', overflow: 'visible'}}>
           {allNodes.map((node, i) => {
-            const elementDelay = (i / allNodes.length) * drawDurationFrames * 0.5;
-            const elementSpring = spring({
-              fps,
-              frame: Math.max(0, frame - elementDelay),
-              config: {damping: 15, stiffness: 100},
-            });
+            // Staggered animation: each element starts slightly after the previous one
+            const elementDelay = (i / Math.max(1, allNodes.length)) * drawDurationFrames * 0.7;
+            const elementProgress = interpolate(
+              frame - elementDelay,
+              [0, drawDurationFrames * 0.3],
+              [0, 1],
+              {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
+            );
+            
             return (
               <RoughElement 
                 key={`${i}-${node.kind}`} 
                 node={node} 
                 index={i}
-                progress={Math.min(1, elementSpring)} 
+                progress={elementProgress} 
               />
             );
           })}
