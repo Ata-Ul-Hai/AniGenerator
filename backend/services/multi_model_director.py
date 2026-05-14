@@ -9,7 +9,7 @@ import random
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock
 
 import openai
@@ -98,6 +98,12 @@ class VisualManifest:
     raw_text: str
     """Original chunk for fallback"""
 
+    layout_directions: list[str] = field(default_factory=list)
+    """Ordered layout directions for each scene transition"""
+
+    kinetic_words_per_scene: list[list[str]] = field(default_factory=list)
+    """Kinetic keywords for each scene"""
+
 
 @dataclass
 class ChoreographyMap:
@@ -111,6 +117,12 @@ class ChoreographyMap:
 
     pacing: str
     """Pacing of the animation: "fast" | "medium" | "slow" """
+
+    layout_directions: list[str] = field(default_factory=list)
+    """Ordered layout directions for each scene transition"""
+
+    kinetic_words_per_scene: list[list[str]] = field(default_factory=list)
+    """Kinetic keywords for each scene"""
 
 
 @dataclass
@@ -153,20 +165,14 @@ class ContextualAnalyzer:
     """
     Contextual analyzer using Llama 3.3 70B via Groq.
 
-    Extracts visual concepts and creates a choreography map from text chunks.
-    Falls back to simple text chunking on API failure.
+    Extracts visual concepts, spatial layout directions, and kinetic words for the
+    infinite-canvas whiteboard. Falls back to simple text chunking on API failure.
     """
 
     def __init__(self):
-        self.max_scenes = get_settings().max_scenes
+        pass
 
     def analyze(self, text_chunk: str) -> tuple[VisualManifest, ChoreographyMap]:
-        """
-        Analyze text chunk and return VisualManifest and ChoreographyMap.
-
-        Tries Groq → Cerebras → Gemini in order.
-        Falls back to simple text chunking if all providers fail.
-        """
         logger.info(f"ContextualAnalyzer.analyze invoked with text chunk of length {len(text_chunk)}")
         try:
             manifest, choreography = self._call_llm_api(text_chunk)
@@ -178,23 +184,31 @@ class ContextualAnalyzer:
 
     def _call_llm_api(self, text_chunk: str) -> tuple[VisualManifest, ChoreographyMap]:
         """Call the LLM with Groq → Cerebras → Gemini fallback."""
-        system_prompt = """You are a visual storytelling analyzer. Analyze the given text and extract:
-1. Visual concepts - key visual elements that can be animated
-2. Themes - high-level thematic categories
-3. Scene guidance - per-scene visual direction hints
-4. Narrative flow - ordered sequence of story beats
-5. Pacing - the rhythm of the animation (fast, medium, or slow)
+        system_prompt = """You are a visual storytelling analyzer for an infinite-canvas whiteboard video.
+Analyze the given text and extract structured data for scene generation.
+
+Spatial rules for the canvas layout:
+- Scene 1 is always at the canvas origin (0,0) — do NOT specify layout_direction for it.
+- "right": next scene continues to the right (most common, use for sequential ideas)
+- "down": next scene goes below (use for contrast, depth, or subordinate concepts)
+- "diagonal-right": scene goes right and slightly down (use for progression or branching)
+- "diagonal-down": scene goes down and slightly right (use for subordinate details)
 
 Respond with valid JSON in this exact format:
 {
   "concepts": ["concept1", "concept2", ...],
   "themes": ["theme1", "theme2", ...],
-  "scene_guidance": ["guidance1", "guidance2", ...],
-  "narrative_flow": ["beat1", "beat2", ...],
+  "scene_guidance": ["visual hint for scene 1", "visual hint for scene 2", ...],
+  "narrative_flow": ["narration text for scene 1", "narration text for scene 2", ...],
+  "layout_directions": ["right", "down", "right", ...],
+  "kinetic_words": [["key1", "key2", "key3"], ["key1", "key2"], ...],
   "pacing": "fast|medium|slow"
 }
 
-Only respond with the JSON, no other text."""
+Notes:
+- layout_directions has one entry per scene starting from scene 2 (scene 1 has no direction).
+- kinetic_words has one subarray per scene: the 3-5 most impactful words from that scene's narration.
+- Only respond with the JSON, no other text."""
 
         settings = get_settings()
         configs = [
@@ -208,7 +222,7 @@ Only respond with the JSON, no other text."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_chunk},
             ],
-            max_tokens=1000,
+            max_tokens=1200,
         )
 
         try:
@@ -217,51 +231,51 @@ Only respond with the JSON, no other text."""
             logger.error(f"Failed to parse LLM response as JSON: {e}")
             raise ValueError(f"Invalid JSON from LLM: {e}")
 
-        # Extract data with defaults
         concepts = data.get("concepts", [])
         themes = data.get("themes", [])
         scene_guidance = data.get("scene_guidance", [])
         narrative_flow = data.get("narrative_flow", [])
         pacing = data.get("pacing", "medium")
+        layout_directions = data.get("layout_directions", [])
+        kinetic_words_per_scene = data.get("kinetic_words", [])
 
-        # Validate pacing
         if pacing not in ("fast", "medium", "slow"):
             pacing = "medium"
 
-        # Limit to max_scenes
-        concepts = concepts[: self.max_scenes]
-        scene_guidance = scene_guidance[: self.max_scenes]
-        narrative_flow = narrative_flow[: self.max_scenes]
+        concepts = concepts[:7]
+        scene_guidance = scene_guidance[:7]
+        narrative_flow = narrative_flow[:7]
+        layout_directions = layout_directions[:7]
+        kinetic_words_per_scene = kinetic_words_per_scene[:7]
 
         manifest = VisualManifest(
             concepts=concepts,
             themes=themes,
             scene_guidance=scene_guidance,
             raw_text=text_chunk,
+            layout_directions=layout_directions,
+            kinetic_words_per_scene=kinetic_words_per_scene,
         )
 
         choreography = ChoreographyMap(
-            scene_count=len(concepts) if concepts else self.max_scenes,
+            scene_count=len(concepts) if concepts else 5,
             narrative_flow=narrative_flow,
             pacing=pacing,
+            layout_directions=layout_directions,
+            kinetic_words_per_scene=kinetic_words_per_scene,
         )
+
+        # Attach spatial data directly to choreography via extra attrs
+        choreography.layout_directions = layout_directions  # type: ignore[attr-defined]
+        choreography.kinetic_words_per_scene = kinetic_words_per_scene  # type: ignore[attr-defined]
 
         return manifest, choreography
 
     def _fallback_manifest(self, text_chunk: str) -> tuple[VisualManifest, ChoreographyMap]:
-        """
-        Create a minimal VisualManifest from text chunking.
-        
-        Splits text on sentences and uses first N as concepts.
-        """
-        # Split on sentence boundaries
         sentences = re.split(r"(?<=[.!?])\s+", text_chunk)
-        # Filter out empty strings
         sentences = [s.strip() for s in sentences if s.strip()]
-        
-        # Take first max_scenes as concepts
-        concepts = sentences[: self.max_scenes]
-        
+        concepts = sentences[:7]
+
         manifest = VisualManifest(
             concepts=concepts,
             themes=[],
@@ -274,6 +288,8 @@ Only respond with the JSON, no other text."""
             narrative_flow=concepts,
             pacing="medium",
         )
+        choreography.layout_directions = []  # type: ignore[attr-defined]
+        choreography.kinetic_words_per_scene = []  # type: ignore[attr-defined]
 
         logger.info(f"Created fallback manifest with {len(concepts)} concepts")
         return manifest, choreography
@@ -302,13 +318,85 @@ def _set_cached(key: str, value: dict, ttl_seconds: int) -> None:
         _illustration_ttl_cache[key] = (time.time(), value)
 
 
+_CANVAS_SCENE_W = 1920
+_CANVAS_SCENE_H = 1080
+_CANVAS_MARGIN = 80
+
+_VALID_DIRECTIONS = {"right", "down", "diagonal-right", "diagonal-down"}
+
+
+def _calculate_canvas_coordinates(scene_entries: list[dict]) -> list[dict]:
+    """Calculate canvas (x, y) for each scene based on its layout_direction."""
+    result = []
+    for i, scene in enumerate(scene_entries):
+        scene = dict(scene)
+        if i == 0:
+            scene["canvas_x"] = 0
+            scene["canvas_y"] = 0
+        else:
+            prev = result[i - 1]
+            direction = scene.get("layout_direction", "right")
+            if direction == "down":
+                scene["canvas_x"] = prev["canvas_x"]
+                scene["canvas_y"] = prev["canvas_y"] + _CANVAS_SCENE_H + _CANVAS_MARGIN
+            elif direction == "diagonal-right":
+                scene["canvas_x"] = prev["canvas_x"] + _CANVAS_SCENE_W + _CANVAS_MARGIN
+                scene["canvas_y"] = prev["canvas_y"] + 200
+            elif direction == "diagonal-down":
+                scene["canvas_x"] = prev["canvas_x"] + 200
+                scene["canvas_y"] = prev["canvas_y"] + _CANVAS_SCENE_H + _CANVAS_MARGIN
+            else:  # "right" and default
+                scene["canvas_x"] = prev["canvas_x"] + _CANVAS_SCENE_W + _CANVAS_MARGIN
+                scene["canvas_y"] = prev["canvas_y"]
+        scene["canvas_width"] = _CANVAS_SCENE_W
+        scene["canvas_height"] = _CANVAS_SCENE_H
+        result.append(scene)
+    return result
+
+
+def validate_and_fix_overlap(scenes: list[SceneChoreography]) -> list[SceneChoreography]:
+    """Detect overlapping canvas zones and recalculate to a simple right-to-right layout."""
+
+    def _overlaps(a: SceneChoreography, b: SceneChoreography) -> bool:
+        return not (
+            a.canvas_x + a.canvas_width + _CANVAS_MARGIN <= b.canvas_x
+            or b.canvas_x + b.canvas_width + _CANVAS_MARGIN <= a.canvas_x
+            or a.canvas_y + a.canvas_height + _CANVAS_MARGIN <= b.canvas_y
+            or b.canvas_y + b.canvas_height + _CANVAS_MARGIN <= a.canvas_y
+        )
+
+    has_overlap = any(
+        _overlaps(scenes[i], scenes[j])
+        for i in range(len(scenes))
+        for j in range(i + 1, len(scenes))
+    )
+
+    if not has_overlap:
+        return scenes
+
+    logger.warning("Spatial overlap detected — recalculating canvas coordinates sequentially")
+    cursor_x = 0
+    fixed = []
+    for scene in scenes:
+        fixed.append(scene.model_copy(update={
+            "canvas_x": cursor_x,
+            "canvas_y": 0,
+            "layout_direction": "right",
+        }))
+        cursor_x += scene.canvas_width + _CANVAS_MARGIN
+    return fixed
+
+
 class AssetDiscoveryAgent:
     """
     Asset discovery agent for finding illustrations and SVG icons.
 
-    Tier 1: Semantic index (Phase 3 — injected via semantic_search.find_asset)
+    Tier 1: Semantic index (via semantic_search.find_assets, top-k=2)
     Tier 2: Iconify API  (hyphenated noun keywords, locally cached)
-    Tier 3: Skip         — return None, scene renders text-only
+    Tier 3: Skip         — return (None, None), scene renders text-only
+
+    Returns a tuple (primary_asset, secondary_asset).
+    Pass exclude_ids to skip already-used assets for uniqueness across a job.
     """
 
     def __init__(self):
@@ -318,46 +406,74 @@ class AssetDiscoveryAgent:
         self,
         manifest_entry: str,
         scene_id: int,
-    ) -> IllustrationCandidate | str | None:
+        exclude_ids: set[str] | None = None,
+    ) -> tuple[IllustrationCandidate | str | None, IllustrationCandidate | str | None]:
         """
-        Discover visual assets using the tiered fallback chain.
+        Discover up to two visual assets using the tiered fallback chain.
 
-        Never blocks the pipeline — returns None on all-tier miss.
+        Returns (primary, secondary). secondary may be None.
+        Never blocks the pipeline.
         """
         logger.info(f"AssetDiscoveryAgent.discover_assets for scene {scene_id}")
+        used = exclude_ids or set()
 
-        # Tier 1: Semantic index (wired in Phase 3; no-op until then)
+        primary: IllustrationCandidate | str | None = None
+        secondary: IllustrationCandidate | str | None = None
+
+        # Tier 1: Semantic index — request up to 2 results
         try:
-            from backend.services.semantic_search import find_asset
-            match = find_asset(manifest_entry)
-            if match:
-                svg_content = open(match["path"]).read()
-                candidate = IllustrationCandidate(
-                    url=match["path"],
-                    title=match["text"],
-                    provider="local-undraw",
-                    preview_url=match["path"],
-                    svg_markup=svg_content,
+            from backend.services.semantic_search import find_assets
+            matches = find_assets(manifest_entry, exclude_ids=list(used), top_k=2)
+            candidates: list[IllustrationCandidate] = []
+            for match in matches:
+                try:
+                    svg_content = open(match["path"]).read()
+                    candidates.append(IllustrationCandidate(
+                        url=match["path"],
+                        title=match["text"],
+                        provider="local-undraw",
+                        preview_url=match["path"],
+                        svg_markup=svg_content,
+                    ))
+                    used.add(match.get("id", match["path"]))
+                except Exception as read_err:
+                    logger.debug(f"Scene {scene_id}: could not read SVG for {match.get('id')}: {read_err}")
+
+            if candidates:
+                primary = candidates[0]
+                secondary = candidates[1] if len(candidates) > 1 else None
+                logger.info(
+                    f"Scene {scene_id}: semantic hits → primary={candidates[0].title}"
+                    + (f", secondary={candidates[1].title}" if secondary else "")
                 )
-                logger.info(f"Scene {scene_id}: semantic hit → {match['id']}")
-                return candidate
+                return primary, secondary
         except ModuleNotFoundError:
-            pass  # semantic_search not yet available (Phase 3)
+            pass
         except Exception as e:
             logger.warning(f"Scene {scene_id}: semantic search error: {e}")
 
-        # Tier 2: Iconify
+        # Tier 2: Iconify — fetch up to 2 distinct icons
         keywords = self._generate_keywords(manifest_entry)
         logger.info(f"Scene {scene_id}: Iconify keywords={keywords}")
+        iconify_results: list[str] = []
         for kw in keywords:
-            icon_svg = fetch_icon_svg(kw)
-            if icon_svg:
-                logger.info(f"Scene {scene_id}: Iconify hit for '{kw}'")
-                return icon_svg
+            if len(iconify_results) >= 2:
+                break
+            result = fetch_icon_svg(kw, exclude_names=used)
+            if result:
+                icon_name, icon_svg = result
+                used.add(icon_name)
+                iconify_results.append(icon_svg)
+                logger.info(f"Scene {scene_id}: Iconify hit for '{kw}' → {icon_name}")
+
+        if iconify_results:
+            primary = iconify_results[0]
+            secondary = iconify_results[1] if len(iconify_results) > 1 else None
+            return primary, secondary
 
         # Tier 3: Skip
         logger.info(f"Scene {scene_id}: all tiers missed — text-only scene")
-        return None
+        return None, None
 
 
     def _generate_keywords(self, manifest_entry: str) -> list[str]:
@@ -397,16 +513,20 @@ class AssetDiscoveryAgent:
                 _LLMConfig("gemini",   settings.gemini_api_key,   _GEMINI_BASE,   "gemini-2.5-flash"),
             ]
             system_prompt = (
-                "Extract 3 keywords for finding vector icons on Iconify.\n"
+                "Extract 5 search keywords for finding vector icons on Iconify.\n"
                 "Rules:\n"
-                "- Each keyword must be a single word or hyphenated noun/verb.\n"
-                "- Use Iconify vocabulary: simple, concrete objects or actions.\n"
-                "- Good examples: 'lock', 'server', 'piggy-bank', 'trending-up', 'shield', 'database', 'rocket'\n"
-                "- Bad examples: 'containerized applications', 'financial growth', 'security concept'\n"
-                "- No abstract concepts. No multi-word phrases without hyphens.\n"
-                "- Never return brand names, company names, or trademarked terms.\n"
-                "- Never return 'logo', 'brand', 'icon', or 'image' as a keyword.\n"
-                "Return ONLY: {\"keywords\": [\"word1\", \"word2\", \"word3\"]}"
+                "- Think CONCEPTUALLY not literally. 'Docker container' → 'box', 'package', 'cube'\n"
+                "- Each keyword must be a single hyphenated noun or verb.\n"
+                "- Think in simple visual metaphors: what does this LOOK like?\n"
+                "- Examples:\n"
+                "  'layers in Docker image' → ['stack', 'layers', 'copy', 'cards', 'sheets']\n"
+                "  'Dockerfile build process' → ['hammer', 'wrench', 'build', 'file-code', 'gear']\n"
+                "  'container orchestration' → ['sitemap', 'network', 'nodes', 'flow', 'grid']\n"
+                "  'app isolation' → ['lock', 'box', 'shield', 'room', 'fence']\n"
+                "- Never use brand names, company names, or product names.\n"
+                "- Never use 'logo', 'icon', 'brand'.\n"
+                "Return ONLY: {\"keywords\": [\"word1\", \"word2\", \"word3\", \"word4\", \"word5\"]}\n"
+                "The word 'json' must appear in this response format."
             )
             content = _call_with_fallback(
                 configs,
@@ -678,7 +798,7 @@ class AnimationMapper:
             return None
 def generate_enhanced_scenes(
     text_chunk: str,
-    max_scenes: int = 8,
+    target_count: int = 5,
     max_words_per_narration: int = 37,
     audio_durations: dict[int, int] | None = None,
 ) -> list[SceneChoreography]:
@@ -691,7 +811,7 @@ def generate_enhanced_scenes(
 
     Args:
         text_chunk: Input text to generate scenes from
-        max_scenes: Maximum number of scenes to generate (default: 8)
+        target_count: Target number of scenes to generate (default: 5)
         max_words_per_narration: Maximum words per narration (default: 37)
         audio_durations: Optional dict of {scene_id: audio_duration_ms} for Lottie hold time calculation
 
@@ -700,7 +820,7 @@ def generate_enhanced_scenes(
     """
     logger.info(
         f"generate_enhanced_scenes invoked: chunk_length={len(text_chunk)}, "
-        f"max_scenes={max_scenes}, max_words_per_narration={max_words_per_narration}"
+        f"target_count={target_count}, max_words_per_narration={max_words_per_narration}"
     )
 
     try:
@@ -715,12 +835,14 @@ def generate_enhanced_scenes(
 
         # Determine actual number of scenes to generate
         actual_scene_count = min(
-            max_scenes,
+            target_count,
             max(len(manifest.concepts), len(manifest.scene_guidance), choreography.scene_count)
         )
-
-        # Ensure at least 1 scene
         actual_scene_count = max(1, actual_scene_count)
+
+        # Retrieve spatial/kinetic data attached by _call_llm_api
+        layout_directions: list[str] = getattr(choreography, "layout_directions", [])
+        kinetic_words_per_scene: list[list[str]] = getattr(choreography, "kinetic_words_per_scene", [])
 
         # Prepare manifest entries for each scene
         scene_entries = []
@@ -729,79 +851,108 @@ def generate_enhanced_scenes(
             guidance = manifest.scene_guidance[i] if i < len(manifest.scene_guidance) else concept
             theme = manifest.themes[0] if manifest.themes else ""
 
-            # Combine concept, guidance, and theme for asset discovery
+            # layout_directions[0] is for scene 2 (scene 1 has no direction)
+            direction_idx = i - 1
+            direction = (
+                layout_directions[direction_idx]
+                if 0 <= direction_idx < len(layout_directions)
+                and layout_directions[direction_idx] in _VALID_DIRECTIONS
+                else "right"
+            )
+
+            kinetic = (
+                [str(w) for w in kinetic_words_per_scene[i][:5]]
+                if i < len(kinetic_words_per_scene) and kinetic_words_per_scene[i]
+                else []
+            )
+
             entry = f"{guidance} {concept} {theme}".strip()
             scene_entries.append({
                 "scene_id": i + 1,
                 "manifest_entry": entry or concept or f"Scene {i + 1}",
                 "narration": choreography.narrative_flow[i] if i < len(choreography.narrative_flow) else guidance,
                 "pacing": choreography.pacing,
+                "layout_direction": direction,
+                "kinetic_words": kinetic,
             })
 
-        # Step 2-4: For each scene, run discover_assets() and validate() in parallel
-        # with ThreadPoolExecutor(max_workers=4)
-        scene_results: list[dict] = [{} for _ in range(actual_scene_count)]
+        # Assign canvas coordinates based on layout directions
+        scene_entries = _calculate_canvas_coordinates(scene_entries)
 
-        def process_scene(scene_info: dict) -> dict:
-            """Discover asset for one scene. No validation — accept any tier hit."""
+        # Process scenes sequentially to enforce asset uniqueness across the job
+        used_asset_ids: set[str] = set()
+        asset_discovery = AssetDiscoveryAgent()
+        results = []
+
+        for scene_info in scene_entries:
             scene_id = scene_info["scene_id"]
             manifest_entry = scene_info["manifest_entry"]
             logger.info(f"Processing scene {scene_id}: {manifest_entry[:50]}...")
 
-            asset_discovery = AssetDiscoveryAgent()
-            asset = asset_discovery.discover_assets(manifest_entry, scene_id)
+            asset, asset2 = asset_discovery.discover_assets(manifest_entry, scene_id, exclude_ids=used_asset_ids)
+
+            # Track used assets to prevent duplicates
+            for a in (asset, asset2):
+                if isinstance(a, IllustrationCandidate):
+                    used_asset_ids.add(a.url)
+                elif isinstance(a, str) and a:
+                    used_asset_ids.add(a[:40])
 
             if asset is None:
                 logger.info(f"Scene {scene_id}: no asset found, will render text-only")
 
-            return {
+            results.append({
                 "scene_id": scene_id,
                 "asset": asset,
+                "asset2": asset2,
                 "manifest_entry": manifest_entry,
                 "narration": scene_info["narration"],
-            }
-
-        # Process scenes in parallel with ThreadPoolExecutor(max_workers=4)
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = executor.map(process_scene, scene_entries)
-            results = list(futures)
-
-        # Sort results by scene_id to maintain order
-        results.sort(key=lambda x: x["scene_id"])
+                "layout_direction": scene_info["layout_direction"],
+                "kinetic_words": scene_info["kinetic_words"],
+                "canvas_x": scene_info["canvas_x"],
+                "canvas_y": scene_info["canvas_y"],
+                "canvas_width": scene_info["canvas_width"],
+                "canvas_height": scene_info["canvas_height"],
+            })
 
         # Step 5: Call AnimationMapper.map_timing() per scene and assemble SceneChoreography
         animation_mapper = AnimationMapper()
         scenes: list[SceneChoreography] = []
-
-        # Default audio duration per scene (used if not provided)
-        # This should now come from audio_durations parameter passed from pipeline
         provided_durations = audio_durations or {}
 
         for result in results:
             scene_id = result["scene_id"]
             asset = result["asset"]
+            asset2 = result.get("asset2")
             manifest_entry = result["manifest_entry"]
             narration = result["narration"]
 
             audio_duration_ms = provided_durations.get(scene_id, 15000)
             timing = animation_mapper.map_timing(asset, audio_duration_ms, scene_id)
 
-            if isinstance(asset, IllustrationCandidate):
-                svg_path = f"illustration://{asset.url}"
-                svg_content = asset.svg_markup or f"<!-- illustration: {asset.title} from {asset.provider} -->"
-                metaphor_hint = asset.title
-            elif isinstance(asset, str) and asset:
-                # SVG from Iconify — normalize to whiteboard style
-                from backend.services.icon_fetcher import normalize_svg
-                svg_path = f"inline://scene_{scene_id}.svg"
-                svg_content = normalize_svg(asset)
-                metaphor_hint = manifest_entry
-            else:
-                # All tiers missed — text-only scene, no placeholder
+            from backend.services.icon_fetcher import normalize_svg
+
+            def _resolve_asset(a: IllustrationCandidate | str | None, sid: int, label: str):
+                """Return (svg_path, svg_content, metaphor_hint) for an asset."""
+                if isinstance(a, IllustrationCandidate):
+                    return (
+                        f"illustration://{a.url}",
+                        a.svg_markup or f"<!-- illustration: {a.title} from {a.provider} -->",
+                        a.title,
+                    )
+                elif isinstance(a, str) and a:
+                    return (
+                        f"inline://scene_{sid}_{label}.svg",
+                        normalize_svg(a),
+                        manifest_entry,
+                    )
+                return ("none://", "", "")
+
+            svg_path, svg_content, metaphor_hint = _resolve_asset(asset, scene_id, "primary")
+            svg_path2, svg_content2, _ = _resolve_asset(asset2, scene_id, "secondary")
+
+            if not svg_content:
                 logger.info(f"Scene {scene_id}: rendering text-only (no visual asset)")
-                svg_path = "none://"
-                svg_content = ""
-                metaphor_hint = ""
 
             narration_text = narration or manifest_entry
             if not narration_text or not narration_text.strip():
@@ -810,34 +961,40 @@ def generate_enhanced_scenes(
                 )
                 continue
 
-            # For text-only scenes, fall back to manifest_entry as the metaphor hint
-            # so SceneChoreography is never constructed with an empty required field
             if not metaphor_hint:
                 metaphor_hint = manifest_entry or f"scene {scene_id}"
 
-            # Create SceneChoreography with all required fields
-            # Note: audio_path and audio_duration_ms would normally come from TTS service
-            # For now, we use placeholder values
+            on_screen_text = " ".join(narration_text.split()[:6]) or narration_text
             scene = SceneChoreography(
                 scene_id=scene_id,
                 narration=narration_text,
+                on_screen_text=on_screen_text,
                 svg_markup=svg_content,
                 metaphor_hint=metaphor_hint,
-                audio_path=f"audio/scene_{scene_id}.mp3",  # Placeholder
+                audio_path=f"audio/scene_{scene_id}.mp3",  # placeholder; replaced by pipeline_service
                 svg_path=svg_path,
                 svg_content=svg_content,
                 audio_duration_ms=audio_duration_ms,
                 draw_start_ms=timing.draw_start_ms,
                 draw_duration_ms=timing.draw_duration_ms,
                 hold_ms=timing.hold_ms,
+                canvas_x=result["canvas_x"],
+                canvas_y=result["canvas_y"],
+                canvas_width=result["canvas_width"],
+                canvas_height=result["canvas_height"],
+                layout_direction=result["layout_direction"],
+                kinetic_words=result["kinetic_words"],
+                svg_content_secondary=svg_content2 if svg_content2 else None,
+                svg_path_secondary=svg_path2 if svg_path2 and svg_path2 != "none://" else None,
             )
 
             scenes.append(scene)
             logger.info(
-                f"Scene {scene_id} assembled: draw_duration_ms={timing.draw_duration_ms}, "
-                f"hold_ms={timing.hold_ms}"
+                f"Scene {scene_id} assembled: canvas=({result['canvas_x']},{result['canvas_y']}), "
+                f"draw_duration_ms={timing.draw_duration_ms}, hold_ms={timing.hold_ms}"
             )
 
+        scenes = validate_and_fix_overlap(scenes)
         logger.info(f"generate_enhanced_scenes completed: {len(scenes)} scenes generated")
         return scenes
 
@@ -848,7 +1005,7 @@ def generate_enhanced_scenes(
 
         try:
             from backend.services.llm_director import generate_scenes as llm_generate_scenes
-            return llm_generate_scenes(text_chunk, max_scenes, max_words_per_narration)
+            return llm_generate_scenes(text_chunk, target_count, max_words_per_narration)
         except Exception as fallback_error:
             logger.error(f"Fallback to generate_scenes() also failed: {fallback_error}")
             # Return empty list to avoid raising to caller

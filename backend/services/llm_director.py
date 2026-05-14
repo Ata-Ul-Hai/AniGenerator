@@ -21,12 +21,14 @@ You are a whiteboard animation artist and explainer. Your job is to convert text
 For EACH scene you must:
 1. Write a friendly, conversational narration (like a teacher explaining to a curious friend)
 2. Describe a simple, concrete visual metaphor or icon that represents the concept (e.g., 'a wallet', 'a network of nodes', 'a padlock')
+3. Write a SHORT 3-8 word on-screen label shown over the illustration — NOT the narration. Capture the key concept as a punchy headline (e.g., 'Containers vs VMs', 'Lighter, faster, portable', 'One app, one box')
 
 OUTPUT FORMAT — return ONLY a valid JSON array, no markdown, no explanation:
 [
   {
     "scene_id": 1,
     "narration": "conversational spoken explanation here",
+    "on_screen_text": "Short punchy headline here",
     "metaphor_hint": "a single concrete noun or short phrase for the icon (e.g., 'wallet', 'shield', 'network')"
   }
 ]
@@ -35,11 +37,12 @@ EXAMPLE of a CORRECT scene (wallet concept):
 {
   "scene_id": 1,
   "narration": "Think of Bitcoin like digital cash you keep in a wallet. Just like a leather wallet holds your bills and cards, a Bitcoin wallet holds your digital coins.",
+  "on_screen_text": "Your Bitcoin wallet",
   "metaphor_hint": "leather wallet"
 }
 
 IMPORTANT: Every scene needs a DIFFERENT, UNIQUE visual metaphor.
-Maximum __MAX_SCENES__ scenes.
+Maximum __TARGET_SCENES__ scenes.
 
 NARRATION LENGTH RULE:
 Each narration MUST be between 10 and __MAX_WORDS__ words.
@@ -56,7 +59,9 @@ Your last response was not valid JSON. Return ONLY a JSON array of scene objects
 No markdown code fences. No explanation text. Start with [ and end with ].
 Your last response was not valid JSON. Return ONLY a JSON array of scene objects.
 No markdown code fences. No explanation text. Start with [ and end with ].
+Each object MUST include: scene_id, narration, on_screen_text, metaphor_hint.
 Each metaphor_hint should be a concrete noun representing the visual.
+on_screen_text must be a short 3-8 word headline, not the full narration.
 """.strip()
 
 SCENE_LIST_ADAPTER: TypeAdapter[list[SceneScript]] = TypeAdapter(list[SceneScript])
@@ -293,7 +298,7 @@ def _fallback_svg_markup(template_name: str, scene_index: int) -> str:
     )
 
 
-def _fallback_scenes(text_chunk: str, max_scenes: int, reason: str) -> list[SceneScript]:
+def _fallback_scenes(text_chunk: str, target_count: int, reason: str) -> list[SceneScript]:
     """Generate deterministic local scenes if Gemini cannot provide valid output."""
 
     raw_sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text_chunk.strip()) if s.strip()]
@@ -313,7 +318,7 @@ def _fallback_scenes(text_chunk: str, max_scenes: int, reason: str) -> list[Scen
             fallback_text = f"{fallback_text[:217]}..."
         sentences = [fallback_text]
 
-    target_count = max(1, min(max_scenes, len(sentences)))
+    target_count = max(1, min(target_count, len(sentences)))
     scenes: list[SceneScript] = []
     previous_template: str | None = None
 
@@ -321,10 +326,12 @@ def _fallback_scenes(text_chunk: str, max_scenes: int, reason: str) -> list[Scen
         narration = sentences[idx % len(sentences)]
         template = _choose_fallback_template(narration, idx, previous_template)
         previous_template = template
+        short_label = " ".join(narration.split()[:6])
         scenes.append(
             SceneScript(
                 scene_id=idx + 1,
                 narration=narration,
+                on_screen_text=short_label or narration,
                 svg_markup=_fallback_svg_markup(template, idx),
                 metaphor_hint=f"{_FALLBACK_TEMPLATE_HINT.get(template, 'Fallback whiteboard sketch generated locally.')} ({reason}).",
             )
@@ -333,11 +340,11 @@ def _fallback_scenes(text_chunk: str, max_scenes: int, reason: str) -> list[Scen
     return scenes
 
 
-def _build_prompt(text_chunk: str, max_scenes: int, max_words_per_narration: int) -> str:
+def _build_prompt(text_chunk: str, target_count: int, max_words_per_narration: int) -> str:
     """Construct the full director prompt with model constraints and examples."""
 
     return (
-        DIRECTOR_PROMPT_TEMPLATE.replace("__MAX_SCENES__", str(max_scenes))
+        DIRECTOR_PROMPT_TEMPLATE.replace("__TARGET_SCENES__", str(target_count))
         .replace("__MAX_WORDS__", str(max_words_per_narration))
         .replace("__EXTRACTED_TEXT__", text_chunk.strip())
     )
@@ -457,32 +464,32 @@ def _generate_with_gemini(prompt: str) -> str:
 
 def generate_scenes(
     text_chunk: str,
-    max_scenes: int = 8,
+    target_count: int = 5,
     max_words_per_narration: int = 37,
 ) -> list[SceneScript]:
     """Generate validated scene scripts for a text chunk using Gemini."""
 
     if not text_chunk.strip():
         raise ValueError("text_chunk cannot be empty")
-    if max_scenes < 1:
-        raise ValueError("max_scenes must be >= 1")
+    if target_count < 1:
+        raise ValueError("target_count must be >= 1")
 
-    base_prompt = _build_prompt(text_chunk, max_scenes, max_words_per_narration)
+    base_prompt = _build_prompt(text_chunk, target_count, max_words_per_narration)
 
     try:
         first_response = _generate_with_gemini(base_prompt)
         scenes = _validate_scene_payload(first_response)
         if not scenes:
             raise ValueError("Gemini returned an empty scene list")
-        # Enforce max_scenes — Gemini may return more than requested
-        scenes = scenes[:max_scenes]
+        # Enforce target_count — Gemini may return more than requested
+        scenes = scenes[:target_count]
         logger.info("Generated %s scene(s) on first attempt", len(scenes))
         return scenes
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         logger.warning("Initial scene generation parse failed: %s", exc)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Gemini request failed; using fallback scenes: %s", exc)
-        return _fallback_scenes(text_chunk, max_scenes, reason="request failure")
+        return _fallback_scenes(text_chunk, target_count, reason="request failure")
 
     retry_prompt = f"{base_prompt}\n\n{STRICT_RETRY_SUFFIX}"
     try:
@@ -490,12 +497,12 @@ def generate_scenes(
         scenes = _validate_scene_payload(second_response)
         if not scenes:
             raise ValueError("Gemini retry returned an empty scene list")
-        scenes = scenes[:max_scenes]
+        scenes = scenes[:target_count]
         logger.info("Generated %s scene(s) after retry", len(scenes))
         return scenes
     except (json.JSONDecodeError, ValidationError, ValueError) as exc:
         logger.error("Scene generation failed after retry parse: %s", exc)
-        return _fallback_scenes(text_chunk, max_scenes, reason="invalid Gemini JSON")
+        return _fallback_scenes(text_chunk, target_count, reason="invalid Gemini JSON")
     except Exception as exc:  # noqa: BLE001
         logger.warning("Gemini retry request failed; using fallback scenes: %s", exc)
-        return _fallback_scenes(text_chunk, max_scenes, reason="request failure")
+        return _fallback_scenes(text_chunk, target_count, reason="request failure")

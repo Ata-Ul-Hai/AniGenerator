@@ -1,7 +1,7 @@
 """Offline semantic asset lookup using all-MiniLM-L6-v2 embeddings.
 
 Loaded once at startup via lru_cache. Zero network calls at query time.
-Falls back to None (safely) if the index or model is unavailable.
+Falls back to an empty list (safely) if the index or model is unavailable.
 """
 from __future__ import annotations
 
@@ -16,7 +16,11 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 _MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-_THRESHOLD = float(os.environ.get("SEMANTIC_THRESHOLD", "0.30"))
+
+# Tiered thresholds for find_assets()
+_THRESHOLD_HIGH   = float(os.environ.get("SEMANTIC_THRESHOLD", "0.20"))  # primary results
+_THRESHOLD_MID    = 0.15  # fill remaining slots if < top_k above high
+_THRESHOLD_MIN    = 0.10  # last-resort — never return empty if any hit above this
 
 # Resolve index path:
 #   1. ASSET_INDEX_PATH env var (absolute path — set in Cloud Run / .env)
@@ -83,45 +87,108 @@ def _get_model():
         return None
 
 
-def find_asset(query: str) -> dict | None:
+def find_assets(
+    query: str,
+    exclude_ids: list[str] | None = None,
+    top_k: int = 3,
+) -> list[dict]:
     """
-    Find the closest asset to the query using cosine similarity.
+    Find the top-k closest assets to the query using cosine similarity.
 
-    Returns a dict {"id", "path", "text", "embedding"} if similarity >= threshold,
-    or None if nothing qualifies or the index/model is unavailable.
+    Tiered thresholds (never returns empty if ANY match exists above 0.10):
+      - Primary slot:  score >= 0.20 (SEMANTIC_THRESHOLD env override)
+      - Fill slots:    score >= 0.15  (fills remaining slots up to top_k)
+      - Last-resort:   score >= 0.10  (added only if list still has < 1 item)
 
-    This function is safe to call even before Phase 3 assets are deployed:
-    it returns None silently if the index file doesn't exist yet.
+    Returns list of dicts {"id", "path", "text", "embedding"} sorted by score
+    descending, excluding exclude_ids. Returns [] if index/model unavailable.
+
+    Args:
+        query:       Search query string.
+        exclude_ids: Asset IDs already used in this job — excluded from results.
+        top_k:       Maximum number of results to return.
     """
     if not query or not query.strip():
-        return None
+        return []
 
     index_data = _load_index()
     if index_data is None:
-        return None
+        return []
 
     model = _get_model()
     if model is None:
-        return None
+        return []
 
     try:
         entries, matrix = index_data
+        excluded = set(exclude_ids) if exclude_ids else set()
+
         qvec = model.encode(query.strip(), normalize_embeddings=True, show_progress_bar=False)
         sims = matrix @ qvec  # cosine similarity (both sides normalised)
-        best_idx = int(np.argmax(sims))
-        best_score = float(sims[best_idx])
 
+        # Walk candidates from best to worst, skipping excluded IDs
+        ranked = list(np.argsort(sims)[::-1])
+
+        scored: list[tuple[float, dict]] = []
+        for idx in ranked:
+            entry = entries[idx]
+            if entry.get("id") in excluded or entry.get("path") in excluded:
+                continue
+            scored.append((float(sims[idx]), entry))
+
+        if not scored:
+            return []
+
+        best_score = scored[0][0]
         logger.info(
-            "semantic_search: '%s' → '%s' (score=%.3f, threshold=%.2f)",
-            query[:60], entries[best_idx]["text"], best_score, _THRESHOLD,
+            "semantic_search: '%s' → best='%s' (score=%.3f)",
+            query[:60], scored[0][1]["text"], best_score,
         )
 
-        if best_score >= _THRESHOLD:
-            return entries[best_idx]
+        results: list[dict] = []
 
-        logger.info("semantic_search: below threshold — no match")
-        return None
+        # Pass 1: fill with scores >= HIGH threshold
+        for score, entry in scored:
+            if score < _THRESHOLD_HIGH:
+                break
+            results.append(entry)
+            if len(results) >= top_k:
+                break
+
+        # Pass 2: fill remaining slots with scores >= MID threshold
+        if len(results) < top_k:
+            for score, entry in scored:
+                if entry in results:
+                    continue
+                if score < _THRESHOLD_MID:
+                    break
+                results.append(entry)
+                if len(results) >= top_k:
+                    break
+
+        # Pass 3: last-resort — include best result if still empty and score >= MIN
+        if not results and scored[0][0] >= _THRESHOLD_MIN:
+            results.append(scored[0][1])
+            logger.info(
+                "semantic_search: last-resort inclusion (score=%.3f >= %.2f)",
+                scored[0][0], _THRESHOLD_MIN,
+            )
+
+        if not results:
+            logger.info("semantic_search: below all thresholds (best=%.3f) — no match", best_score)
+
+        return results
 
     except Exception as e:
         logger.warning("semantic_search: query failed: %s", e)
-        return None
+        return []
+
+
+# ── Backwards-compatibility shim ──────────────────────────────────────────────
+def find_asset(query: str, exclude_ids: list[str] | None = None) -> dict | None:
+    """
+    Legacy single-result wrapper around find_assets().
+    Retained for any callers that still use the old signature.
+    """
+    results = find_assets(query, exclude_ids=exclude_ids, top_k=1)
+    return results[0] if results else None

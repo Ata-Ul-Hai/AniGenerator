@@ -40,7 +40,7 @@ def test_ai_illustrator():
         mock_keywords.return_value = ["ship"]
         
         logger.info("Running generate_enhanced_scenes test for keyword 'ship'...")
-        scenes = generate_enhanced_scenes(test_text, max_scenes=1)
+        scenes = generate_enhanced_scenes(test_text, target_count=1)
         
         if not scenes:
             logger.error("TEST FAILED: No scenes generated.")

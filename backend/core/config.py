@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     gcp_project_id: str | None = Field(default=None, alias="GOOGLE_CLOUD_PROJECT")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     svg_assets_dir: str = Field(default="../assets/svgs", alias="SVG_ASSETS_DIR")
-    max_scenes: int = Field(default=8, alias="MAX_SCENES")
     max_input_chars: int = Field(default=15_000, alias="MAX_INPUT_CHARS")
     max_upload_mb: int = Field(default=20, alias="MAX_UPLOAD_MB")
     run_retention_count: int = Field(default=20, alias="RUN_RETENTION_COUNT")

@@ -28,6 +28,14 @@ from threading import BoundedSemaphore, Lock
 logger = logging.getLogger(__name__)
 
 
+def calculate_scene_count(text: str) -> int:
+    """Derive scene count from word count: ~130 wpm, ~12s per scene, clamped 5–8."""
+    words = len(text.split())
+    duration_s = (words / 130) * 60
+    count = int(duration_s / 12)
+    return max(5, min(count, 8))
+
+
 def _get_scene_generator():
     """
     Get the appropriate scene generator based on settings.
@@ -70,13 +78,14 @@ def _synthesize_scene_choreography(
     audio_dir: Path,
     run_token: str,
     enhanced: SceneChoreography | None = None,
+    pre_fetched_svg: str | None = None,
 ) -> SceneChoreography:
     """Synthesize audio and return a fully-populated SceneChoreography.
 
     When `enhanced` is provided (multi-model path), its svg/timing data is
     preserved and only the audio is freshly synthesized.
-    When `enhanced` is None (classic path), svg is fetched from Iconify and
-    timing is calculated from element count.
+    When `enhanced` is None (classic path), svg comes from pre_fetched_svg
+    (already deduped) or falls back to a fresh Iconify fetch.
     """
     audio_filename = f"scene_{scene.scene_id}.mp3"
     audio_abs_path = audio_dir / audio_filename
@@ -85,10 +94,11 @@ def _synthesize_scene_choreography(
     accessible_url = _storage.upload_file(audio_abs_path, remote_path)
 
     if enhanced:
-        # Multi-model path: carry over pre-computed assets and timing
+        # Multi-model path: carry over pre-computed assets, timing, and canvas spatial data
         return SceneChoreography(
             scene_id=scene.scene_id,
             narration=scene.narration,
+            on_screen_text=scene.on_screen_text,
             svg_markup=enhanced.svg_markup,
             metaphor_hint=enhanced.metaphor_hint,
             audio_path=accessible_url,
@@ -98,19 +108,28 @@ def _synthesize_scene_choreography(
             draw_start_ms=enhanced.draw_start_ms,
             draw_duration_ms=enhanced.draw_duration_ms,
             hold_ms=enhanced.hold_ms,
+            canvas_x=enhanced.canvas_x,
+            canvas_y=enhanced.canvas_y,
+            canvas_width=enhanced.canvas_width,
+            canvas_height=enhanced.canvas_height,
+            layout_direction=enhanced.layout_direction,
+            kinetic_words=enhanced.kinetic_words,
         )
 
-    # Classic path: fetch icon + calculate timing from element count
-    settings = get_settings()
-    keyword = keyword_from_hint(scene.metaphor_hint)
-    raw_svg = fetch_icon_svg(keyword, settings.iconify_base_url)
-
-    if raw_svg:
-        svg_content = normalize_svg(raw_svg)
+    # Classic path: use pre-fetched SVG if provided, otherwise fetch fresh
+    if pre_fetched_svg is not None:
+        svg_content = pre_fetched_svg
     else:
-        from backend.services.llm_director import _choose_fallback_template, _fallback_svg_markup
-        template = _choose_fallback_template(scene.narration, scene.scene_id, None)
-        svg_content = _fallback_svg_markup(template, scene.scene_id)
+        settings = get_settings()
+        keyword = keyword_from_hint(scene.metaphor_hint)
+        result = fetch_icon_svg(keyword, settings.iconify_base_url)
+        if result:
+            _icon_name, raw_svg = result
+            svg_content = normalize_svg(raw_svg)
+        else:
+            from backend.services.llm_director import _choose_fallback_template, _fallback_svg_markup
+            template = _choose_fallback_template(scene.narration, scene.scene_id, None)
+            svg_content = _fallback_svg_markup(template, scene.scene_id)
 
     element_count = (
         svg_content.count('<path') + svg_content.count('<circle') +
@@ -124,6 +143,7 @@ def _synthesize_scene_choreography(
     return SceneChoreography(
         scene_id=scene.scene_id,
         narration=scene.narration,
+        on_screen_text=scene.on_screen_text,
         svg_markup=svg_content,
         metaphor_hint=scene.metaphor_hint,
         audio_path=accessible_url,
@@ -133,6 +153,13 @@ def _synthesize_scene_choreography(
         draw_start_ms=0,
         draw_duration_ms=draw_duration_ms,
         hold_ms=hold_ms,
+        # Canvas coords assigned later by _assign_sequential_coordinates
+        canvas_x=0,
+        canvas_y=0,
+        canvas_width=1920,
+        canvas_height=1080,
+        layout_direction="right",
+        kinetic_words=[],
     )
 
 def _synthesize_for_duration(
@@ -146,18 +173,29 @@ def _synthesize_for_duration(
     return duration_ms, str(audio_abs_path)
 
 
+def _assign_sequential_coordinates(scenes: list[SceneChoreography]) -> list[SceneChoreography]:
+    """Assign right-to-right canvas coordinates for scenes without spatial data."""
+    _MARGIN = 80
+    return [
+        scene.model_copy(update={
+            'canvas_x': i * (1920 + _MARGIN),
+            'canvas_y': 0,
+            'canvas_width': 1920,
+            'canvas_height': 1080,
+            'layout_direction': 'right',
+            'kinetic_words': scene.kinetic_words or [],
+        })
+        for i, scene in enumerate(scenes)
+    ]
+
+
 def _generate_render_props_internal(
     extracted_text: str,
-    max_scenes: int,
     run_id: str
 ) -> RenderProps:
     settings = get_settings()
-    word_count = len(extracted_text.split())
-    min_required_words = max_scenes * 30
-    if word_count < min_required_words:
-        max_scenes = max(1, word_count // 30)
-
-    max_words_per_narration = max(10, 300 // max_scenes)
+    scene_count = calculate_scene_count(extracted_text)
+    max_words_per_narration = max(10, 300 // scene_count)
     sampled_text = smart_sample_text(extracted_text, max_chars=settings.max_input_chars)
     chunks = chunk_text(sampled_text)
 
@@ -174,17 +212,16 @@ def _generate_render_props_internal(
         # second pass below (once audio durations are known) so it is never called twice.
         raw_scenes: list[SceneScript] = []
         for chunk_index, chunk in enumerate(chunks, start=1):
-            if len(raw_scenes) >= max_scenes:
+            if len(raw_scenes) >= scene_count:
                 break
-            generated = generate_scenes(chunk, max_scenes - len(raw_scenes), max_words_per_narration)
+            generated = generate_scenes(chunk, scene_count - len(raw_scenes), max_words_per_narration)
             raw_scenes.extend(generated)
 
         # Step 1: Synthesize TTS FIRST to get audio durations
-        # This is needed for Lottie hold time calculations
         audio_durations: dict[int, int] = {}
         with ThreadPoolExecutor(max_workers=4) as tts_pool:
             futures = {
-                tts_pool.submit(_synthesize_for_duration, scene, audio_dir): scene 
+                tts_pool.submit(_synthesize_for_duration, scene, audio_dir): scene
                 for scene in raw_scenes
             }
             for future in as_completed(futures):
@@ -193,44 +230,66 @@ def _generate_render_props_internal(
                 audio_durations[scene.scene_id] = duration_ms
 
         # Step 2: If using multi-model director, regenerate with audio durations
-        # for proper Lottie hold time calculations
+        # for proper timing calculations and canvas coordinate assignment.
         if settings.use_multi_model_director:
             try:
                 from backend.services.multi_model_director import generate_enhanced_scenes
-                # Regenerate with known audio durations
                 enhanced_scenes = generate_enhanced_scenes(
-                    sampled_text, 
-                    max_scenes, 
+                    sampled_text,
+                    scene_count,
                     max_words_per_narration,
                     audio_durations=audio_durations
                 )
-                # Now synthesize audio for enhanced scenes
                 choreography_scenes = []
                 for scene in raw_scenes:
-                    # Find matching enhanced scene by scene_id
                     enhanced = next((s for s in enhanced_scenes if s.scene_id == scene.scene_id), None)
                     if enhanced:
-                        # Multi-model path: merged function handles enhanced assets
                         choreo = _synthesize_scene_choreography(scene, audio_dir, run_id, enhanced=enhanced)
                         choreography_scenes.append(choreo)
                     else:
-                        # Fallback
                         choreo = _synthesize_scene_choreography(scene, audio_dir, run_id)
                         choreography_scenes.append(choreo)
+                # Fallback coordinate assignment if enhanced scenes lacked spatial data
+                if len(choreography_scenes) > 1 and all(s.canvas_x == 0 for s in choreography_scenes):
+                    choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
             except Exception as e:
-                logger.warning(f"Enhanced scene generation failed, using fallback: {e}")
+                logger.warning(f"Enhanced scene generation failed, using classic fallback: {e}")
                 choreography_scenes = []
                 with ThreadPoolExecutor(max_workers=4) as tts_pool:
                     futures = [tts_pool.submit(_synthesize_scene_choreography, scene, audio_dir, run_id) for scene in raw_scenes]
                     for future in as_completed(futures):
                         choreography_scenes.append(future.result())
+                choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
         else:
-            # Original flow for non-multi-model mode
+            # Classic path: pre-fetch icons serially (dedup), then synthesize audio in parallel
+            from backend.services.llm_director import _choose_fallback_template, _fallback_svg_markup
+            used_icon_names: set[str] = set()
+            svg_by_scene_id: dict[int, str] = {}
+            previous_template: str | None = None
+            for scene in raw_scenes:
+                keyword = keyword_from_hint(scene.metaphor_hint)
+                result = fetch_icon_svg(keyword, settings.iconify_base_url, exclude_names=used_icon_names)
+                if result is not None:
+                    icon_name, raw_svg = result
+                    used_icon_names.add(icon_name)
+                    svg_by_scene_id[scene.scene_id] = normalize_svg(raw_svg)
+                else:
+                    template = _choose_fallback_template(scene.narration, scene.scene_id, previous_template)
+                    previous_template = template
+                    svg_by_scene_id[scene.scene_id] = _fallback_svg_markup(template, scene.scene_id)
+
             choreography_scenes = []
             with ThreadPoolExecutor(max_workers=4) as tts_pool:
-                futures = [tts_pool.submit(_synthesize_scene_choreography, scene, audio_dir, run_id) for scene in raw_scenes]
+                futures = [
+                    tts_pool.submit(
+                        _synthesize_scene_choreography, scene, audio_dir, run_id,
+                        None, svg_by_scene_id.get(scene.scene_id),
+                    )
+                    for scene in raw_scenes
+                ]
                 for future in as_completed(futures):
                     choreography_scenes.append(future.result())
+            choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
 
         choreography_scenes.sort(key=lambda s: s.scene_id)
         props = RenderProps(scenes=choreography_scenes)
@@ -344,14 +403,14 @@ def _run_remotion_render(job_id: str, props: RenderProps) -> str:
 
     return accessible_url
 
-def start_background_job(job_id: str, user_id: int | None, text: str, max_sc: int, render: bool):
-    _JOB_EXECUTOR.submit(_background_job_worker, job_id, user_id, text, max_sc, render)
+def start_background_job(job_id: str, user_id: int | None, text: str, render: bool):
+    _JOB_EXECUTOR.submit(_background_job_worker, job_id, user_id, text, render)
 
-def _background_job_worker(job_id: str, user_id: int | None, text: str, max_sc: int, render: bool):
+def _background_job_worker(job_id: str, user_id: int | None, text: str, render: bool):
     db = SessionLocal()
     try:
         crud.set_job_running(db, job_id)
-        props = _generate_render_props_internal(text, max_sc, job_id)
+        props = _generate_render_props_internal(text, job_id)
         crud.create_scenes(db, job_id, [s.model_dump() for s in props.scenes])
         if render:
             crud.update_job_status(db, job_id, "rendering")

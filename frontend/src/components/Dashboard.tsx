@@ -34,7 +34,6 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
   const { user, checkAuth } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [extractedText, setExtractedText] = useState("");
-  const [maxScenes, setMaxScenes] = useState(6);
   const [renderVideo, setRenderVideo] = useState(true);
   const [job, setJob] = useState<JobState | null>(null);
   const [stage, setStage] = useState<"idle" | "extracting" | "extracted" | "generating">("idle");
@@ -157,7 +156,6 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
     try {
       const res = await api.post("/user/generate", { 
         extracted_text: extractedText, 
-        max_scenes: maxScenes, 
         render_video: renderVideo 
       });
       const data = res.data;
@@ -312,20 +310,7 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
                 </div>
                 <h2 className="text-lg font-bold tracking-tight">2. Parameters</h2>
               </div>
-
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Max Scenes</label>
-                    <span className="text-[10px] font-mono text-accent-purple font-bold">{maxScenes}</span>
-                  </div>
-                  <input 
-                    type="range" min="1" max="8" step="1" 
-                    value={maxScenes} onChange={(e) => setMaxScenes(+e.target.value)}
-                    className="w-full h-1 bg-zinc-900 rounded-lg appearance-none accent-accent-purple"
-                  />
-                </div>
-
                 <div className="flex items-center justify-between p-4 bg-background/50 rounded-xl border border-white/5 shadow-inner">
                   <div className="flex items-center gap-3">
                     <FileVideo size={14} className="text-zinc-600" />
@@ -438,10 +423,6 @@ const Dashboard: React.FC<Props> = ({ onLogout }) => {
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold text-zinc-700 uppercase">Process ID</span>
                   <span className="text-[10px] font-mono text-zinc-500">{job?.job_id?.slice(0, 16) || "EMPTY_ID"}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-bold text-zinc-700 uppercase">Scenes Predicted</span>
-                  <span className="text-[10px] font-mono text-zinc-500">{job ? maxScenes : "0"}</span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-white/5">
                   <span className="text-[10px] font-bold text-zinc-700 uppercase">Node Registry</span>

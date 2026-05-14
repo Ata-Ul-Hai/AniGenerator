@@ -159,10 +159,10 @@ def run() -> None:
     print(f"    draw_duration_ms={timing_none.draw_duration_ms}  hold_ms={timing_none.hold_ms}")
 
     # ── STAGE 8: Full end-to-end (2 scenes) ──────────────────────────────────
-    print(f"\n{SEP}\nSTAGE 8 — generate_enhanced_scenes  end-to-end (max_scenes=2)\n{SEP}")
+    print(f"\n{SEP}\nSTAGE 8 — generate_enhanced_scenes  end-to-end (target_count=2)\n{SEP}")
     from backend.services.multi_model_director import generate_enhanced_scenes
     try:
-        scenes = generate_enhanced_scenes(TEST_TEXT, max_scenes=2)
+        scenes = generate_enhanced_scenes(TEST_TEXT, target_count=2)
         for s in scenes:
             print(f"  Scene {s.scene_id}:")
             print(f"    narration:  {s.narration[:90]}{'...' if len(s.narration) > 90 else ''}")

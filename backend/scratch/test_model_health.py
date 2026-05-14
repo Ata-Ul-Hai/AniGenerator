@@ -66,7 +66,7 @@ try:
         results["gemini_native"] = "skip"
     else:
         t0 = time.perf_counter()
-        scenes = generate_scenes(SAMPLE_TEXT, max_scenes=2)
+        scenes = generate_scenes(SAMPLE_TEXT, target_count=2)
         elapsed = time.perf_counter() - t0
         assert scenes, "Empty scene list returned"
         ok(f"Generated {len(scenes)} scene(s) in {elapsed:.1f}s")
@@ -208,7 +208,7 @@ except Exception as exc:
 hdr("6 · Local deterministic fallback (_fallback_scenes)")
 try:
     from backend.services.llm_director import _fallback_scenes
-    scenes = _fallback_scenes(SAMPLE_TEXT, max_scenes=3, reason="health-check test")
+    scenes = _fallback_scenes(SAMPLE_TEXT, target_count=3, reason="health-check test")
     assert len(scenes) >= 1, "Should produce at least 1 scene"
     ok(f"Produced {len(scenes)} scene(s) with no API calls")
     for s in scenes:

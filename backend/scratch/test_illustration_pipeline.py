@@ -46,7 +46,7 @@ def test_pipeline_fetching():
         mock_keywords.side_effect = [["coding"], ["security"]]
         
         logger.info("Running generate_enhanced_scenes test (with MOCK LLM)...")
-        scenes = generate_enhanced_scenes(test_text, max_scenes=2)
+        scenes = generate_enhanced_scenes(test_text, target_count=2)
     
     if not scenes:
         logger.error("TEST FAILED: No scenes generated.")
