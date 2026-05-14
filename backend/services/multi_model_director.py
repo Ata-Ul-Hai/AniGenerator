@@ -18,11 +18,7 @@ import requests
 from backend.core.config import get_settings
 from backend.core.schemas import SceneChoreography
 from backend.services.icon_fetcher import fetch_icon_svg, keyword_from_hint
-from backend.services.llm_director import (
-    _choose_fallback_template,
-    _fallback_svg_markup,
-    _FALLBACK_TEMPLATE_HINT,
-)
+
 
 logger = logging.getLogger("backend.services.multi_model_director")
 
@@ -137,18 +133,6 @@ class IllustrationCandidate:
     """Direct SVG markup if pre-fetched"""
 
 
-@dataclass
-class ValidationResult:
-    """Result of validating a visual candidate against requirements."""
-
-    score: float
-    """Validation score from 0.0 to 1.0"""
-
-    is_valid: bool
-    """True if score >= VISUAL_VALIDATION_THRESHOLD"""
-
-    reason: str
-    """Brief explanation of the validation result"""
 
 
 @dataclass
@@ -321,214 +305,60 @@ def _set_cached(key: str, value: dict, ttl_seconds: int) -> None:
 class AssetDiscoveryAgent:
     """
     Asset discovery agent for finding illustrations and SVG icons.
-    
-    Searches unDraw/Storyset and falls back to Iconify for SVG icons.
+
+    Tier 1: Semantic index (Phase 3 — injected via semantic_search.find_asset)
+    Tier 2: Iconify API  (hyphenated noun keywords, locally cached)
+    Tier 3: Skip         — return None, scene renders text-only
     """
 
     def __init__(self):
-        settings = get_settings()
-        self.cache_ttl_seconds = 3600 # 1 hour
-        self.undraw_db = []
-        try:
-            db_path = os.path.join(os.path.dirname(__file__), "../assets/undraw.json")
-            if os.path.exists(db_path):
-                with open(db_path, "r") as f:
-                    self.undraw_db = json.load(f)
-                logger.info(f"Loaded {len(self.undraw_db)} unDraw illustrations from local database.")
-        except Exception as e:
-            logger.error(f"Failed to load unDraw database: {e}")
-
-    def _fetch_illustration_svg(self, candidate: IllustrationCandidate) -> str | None:
-        """
-        Fetch the SVG content for an illustration.
-        
-        Currently uses a high-quality local library or falls back to AI generation.
-        External CDNs are avoided due to hotlinking restrictions.
-        """
-        keyword = candidate.title.lower()
-        
-        # Professional Hardcoded Library for common technical terms
-        # These are detailed SVGs that match the brand style
-        library = {
-            "coding": '<svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg"><path d="M50 100h400v300H50z" stroke="#3f3d56" fill="none" stroke-width="4"/><path d="M100 150h300M100 200h150M100 250h200" stroke="#6c63ff" stroke-width="4" stroke-linecap="round"/><circle cx="100" cy="350" r="10" fill="#3f3d56"/><circle cx="130" cy="350" r="10" fill="#3f3d56"/></svg>',
-            "security": '<svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg"><path d="M250 50 L400 120 V250 C400 350 250 450 250 450 C250 450 100 350 100 250 V120 L250 50 Z" stroke="#3f3d56" fill="none" stroke-width="4"/><path d="M200 220h100v100H200z" stroke="#6c63ff" fill="none" stroke-width="4"/><path d="M220 220v-30c0-20 15-30 30-30s30 10 30 30v30" stroke="#6c63ff" fill="none" stroke-width="4"/></svg>',
-            "docker": '<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg"><path d="M50 250c0 10 20 20 50 20s50-10 50-20M150 250c0 10 20 20 50 20s50-10 50-20M250 250c0 10 20 20 50 20s50-10 50-20" stroke="#3f3d56" stroke-width="4" fill="none"/><path d="M100 150h200v100H100z" stroke="#3f3d56" stroke-width="4" fill="none"/><path d="M120 170h40v20h-40zM180 170h40v20h-40zM240 170h40v20h-40z" stroke="#6c63ff" stroke-width="2" fill="none"/><path d="M120 200h40v20h-40zM180 200h40v20h-40zM240 200h40v20h-40z" stroke="#6c63ff" stroke-width="2" fill="none"/></svg>',
-            "ship": '<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg"><path d="M50 200 L350 200 L300 250 L100 250 Z" stroke="#3f3d56" stroke-width="4" fill="none"/><path d="M100 200 V100 H150 V200" stroke="#3f3d56" stroke-width="4" fill="none"/><path d="M110 110h30v20h-30zM110 140h30v20h-30z" stroke="#6c63ff" stroke-width="2" fill="none"/><path d="M20 250c20 5 40 5 60 0s40-10 60-10 40 5 60 5 40-5 60-5 40 10 60 10" stroke="#6c63ff" stroke-width="2" fill="none"/></svg>'
-        }
-        
-        if keyword in library:
-            return library[keyword]
-            
-        # AI-Generated SVG Fallback
-        logger.info(f"Generating AI illustration for keyword: {keyword}")
-        return self._generate_svg_with_ai(keyword)
-
-    def _generate_svg_with_ai(self, keyword: str) -> str | None:
-        """Use Groq (Primary) or Gemini to generate a clean whiteboard SVG."""
-        try:
-            settings = get_settings()
-            # Groq/Llama 3.3 70B is excellent at SVG generation
-            configs = [
-                _LLMConfig("groq",     settings.groq_api_key,     _GROQ_BASE,     "llama-3.3-70b-versatile"),
-                _LLMConfig("gemini",   settings.gemini_api_key,   _GEMINI_BASE,   "gemini-2.5-flash"),
-            ]
-            system_prompt = (
-                "You are an expert SVG artist. Generate a high-fidelity, detailed technical illustration.\n"
-                "Constraints:\n"
-                "- Use a 400x300 viewBox.\n"
-                "- Style: Professional hand-drawn/technical (like unDraw or Storyset).\n"
-                "- Use ONLY <path> and <circle> elements. DO NOT use <rect>.\n"
-                "- Palette: Main lines stroke='#3f3d56', Secondary/Accents stroke='#6c63ff'.\n"
-                "- Use stroke-width='3' for main outlines and '1.5' for detail lines.\n"
-                "- Use stroke-linecap='round' and stroke-linejoin='round'.\n"
-                "- NO FILLS. NO BACKGROUNDS.\n"
-                "- Be EXTREMELY DETAILED. Create a recognizable, professional scene with multiple elements.\n"
-                "- For example, if the keyword is 'docker', draw a large ship with stacked containers and a crane.\n"
-                "Return ONLY the raw <svg>...</svg> code."
-            )
-            svg_code = _call_with_fallback(
-                configs,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Generate a premium whiteboard illustration of: {keyword}"},
-                ],
-                max_tokens=2000,
-                json_mode=False,
-            )
-            # Basic cleanup to ensure we only get the SVG tag
-            match = re.search(r"<svg.*?</svg>", svg_code, re.DOTALL | re.IGNORECASE)
-            return match.group(0) if match else None
-        except Exception as e:
-            logger.error(f"AI SVG generation failed for {keyword}: {e}")
-            return None
-
-    def search_illustrations(self, keyword: str) -> list[IllustrationCandidate]:
-        """
-        Search for illustrations matching the keyword from unDraw and Storyset.
-        
-        Currently uses a mapping of common keywords to high-quality SVG sources,
-        or triggers a fallback to Iconify.
-        """
-        logger.info(f"Searching for illustrations with keyword: {keyword}")
-        
-        # Step 1: Search local unDraw database
-        for item in self.undraw_db:
-            tags = item.get("tags", "").lower()
-            if keyword.lower() in tags or keyword.lower() in item.get("title", "").lower():
-                logger.info(f"Found local unDraw match for '{keyword}': {item['title']}")
-                return [
-                    IllustrationCandidate(
-                        url=item["image"],
-                        title=item["title"],
-                        provider="undraw",
-                        preview_url=item["image"]
-                    )
-                ]
-
-        # Step 2: Search for hardcoded illustrations
-        library = {
-            "coding": [
-                IllustrationCandidate(
-                    url="https://undraw.co/api/illustrations/coding", 
-                    title="Coding", 
-                    provider="undraw",
-                    preview_url="https://undraw.co/api/illustrations/coding/preview"
-                )
-            ],
-            "security": [
-                IllustrationCandidate(
-                    url="https://undraw.co/api/illustrations/security", 
-                    title="Security", 
-                    provider="undraw",
-                    preview_url="https://undraw.co/api/illustrations/security/preview"
-                )
-            ],
-            "business": [
-                IllustrationCandidate(
-                    url="https://storyset.com/api/illustrations/business", 
-                    title="Business", 
-                    provider="storyset",
-                    preview_url="https://storyset.com/api/illustrations/business/preview"
-                )
-            ]
-        }
-        
-        results = library.get(keyword.lower(), [])
-        return results
+        pass  # Semantic index loaded lazily by semantic_search module
 
     def discover_assets(
         self,
         manifest_entry: str,
         scene_id: int,
-        excluded_urls: set[str] | None = None,
     ) -> IllustrationCandidate | str | None:
         """
-        Discover visual assets for a scene using the fallback chain.
+        Discover visual assets using the tiered fallback chain.
 
-        Uses the following strategy:
-        1. Generate search keywords from manifest_entry
-        2. Search unDraw and Storyset for illustrations
-        3. If no illustration found, fall back to Iconify SVG
-        4. If Iconify also returns None, return None to trigger hardcoded template fallback
+        Never blocks the pipeline — returns None on all-tier miss.
         """
-        logger.info(f"AssetDiscoveryAgent.discover_assets invoked for scene {scene_id}")
+        logger.info(f"AssetDiscoveryAgent.discover_assets for scene {scene_id}")
 
-        excluded = excluded_urls or set()
+        # Tier 1: Semantic index (wired in Phase 3; no-op until then)
+        try:
+            from backend.services.semantic_search import find_asset
+            match = find_asset(manifest_entry)
+            if match:
+                svg_content = open(match["path"]).read()
+                candidate = IllustrationCandidate(
+                    url=match["path"],
+                    title=match["text"],
+                    provider="local-undraw",
+                    preview_url=match["path"],
+                    svg_markup=svg_content,
+                )
+                logger.info(f"Scene {scene_id}: semantic hit → {match['id']}")
+                return candidate
+        except ModuleNotFoundError:
+            pass  # semantic_search not yet available (Phase 3)
+        except Exception as e:
+            logger.warning(f"Scene {scene_id}: semantic search error: {e}")
 
-        # Step 1: Generate search keywords
+        # Tier 2: Iconify
         keywords = self._generate_keywords(manifest_entry)
-        logger.info(f"Generated keywords for scene {scene_id}: {keywords}")
+        logger.info(f"Scene {scene_id}: Iconify keywords={keywords}")
+        for kw in keywords:
+            icon_svg = fetch_icon_svg(kw)
+            if icon_svg:
+                logger.info(f"Scene {scene_id}: Iconify hit for '{kw}'")
+                return icon_svg
 
-        # Step 2: Search for illustrations
-        for keyword in keywords:
-            illustrations = self.search_illustrations(keyword)
-            for candidate in illustrations:
-                if candidate.url not in excluded:
-                    logger.info(f"Found illustration for scene {scene_id}: {candidate.title}")
-                    
-                    # Attempt to fetch the actual SVG content
-                    svg_content = self._fetch_illustration_svg(candidate)
-                    if svg_content:
-                        logger.info(f"Successfully fetched illustration SVG for {candidate.title}")
-                        candidate.svg_markup = svg_content
-                        return candidate
-                    
-                    logger.debug(f"Could not fetch SVG for {candidate.title}, trying next...")
-
-        logger.info(f"No illustration found for scene {scene_id}. Falling back to Iconify.")
-
-        # Step 3: Fall back to Iconify SVG
-        # Use keyword_from_hint to normalize the manifest_entry for Iconify
-        icon_keyword = keyword_from_hint(manifest_entry)
-        logger.info(f"Attempting Iconify fallback for scene {scene_id} with keyword: {icon_keyword}")
-
-        iconify_svg = fetch_icon_svg(icon_keyword)
-
-        if iconify_svg is not None:
-            logger.info(f"Iconify fallback successful for scene {scene_id}")
-            return iconify_svg
-
-        # Step 4: Final fallback - AI Illustration generation
-        logger.info(f"Iconify fallback failed for scene {scene_id}. Triggering AI Illustration generation.")
-        
-        # Use the first meaningful keyword for the AI illustrator
-        best_keyword = keywords[0] if keywords else icon_keyword
-        bespoke = IllustrationCandidate(
-            url=f"bespoke://{best_keyword}",
-            title=best_keyword.capitalize(),
-            provider="ai-illustrator",
-            preview_url=""
-        )
-        svg_content = self._fetch_illustration_svg(bespoke)
-        if svg_content:
-            logger.info(f"Successfully generated AI illustration for {best_keyword}")
-            bespoke.svg_markup = svg_content
-            return bespoke
-
-        logger.info(f"AI Illustration failed for scene {scene_id}. Returning None to trigger template fallback.")
-
-        # Step 5: Everything failed - return None
+        # Tier 3: Skip
+        logger.info(f"Scene {scene_id}: all tiers missed — text-only scene")
         return None
+
 
     def _generate_keywords(self, manifest_entry: str) -> list[str]:
         """
@@ -640,106 +470,6 @@ class AssetDiscoveryAgent:
         return result if result else ["icon"]
 
 
-class VisualValidator:
-    """
-    Visual validator using llama-3.1-8b-instant via Groq.
-
-    Reuses the existing GROQ_API_KEY — no extra credentials needed.
-    Fail-open when API is unavailable (accepts all assets).
-    """
-
-    def __init__(self):
-        self.threshold = get_settings().visual_validation_threshold
-
-    def validate(self, asset_description: str, concept: str) -> ValidationResult:
-        """
-        Validate that an asset description matches the intended concept.
-
-        Uses llama-3.1-8b-instant via Groq to assess visual-concept alignment.
-        Returns fail-open result (score=1.0) if API is unavailable.
-
-        Args:
-            asset_description: Description of the visual asset (title, preview info)
-            concept: The concept/idea the asset should represent
-
-        Returns:
-            ValidationResult with score (0.0-1.0), is_valid (bool), and reason (str)
-        """
-        logger.info(f"Validating asset against concept: {concept}")
-
-        try:
-            result = self._call_vlm_api(asset_description, concept)
-            logger.info(f"Validation score for '{concept}': {result.score:.2f}, is_valid: {result.is_valid}")
-            return result
-        except Exception as e:
-            logger.warning(f"Visual validation failed: {e}. Using fail-open (accepting asset).")
-            return ValidationResult(
-                score=1.0,
-                is_valid=True,
-                reason="validator unavailable",
-            )
-
-    def _call_vlm_api(self, asset_description: str, concept: str) -> ValidationResult:
-        """Validate asset-concept match via Groq → Cerebras → Gemini fallback."""
-        system_prompt = f"""You are a visual quality validator. Assess how well a visual asset matches a concept.
-Rate the match from 0.0 (completely unrelated) to 1.0 (perfect match).
-
-Asset description: {asset_description}
-Concept to match: {concept}
-
-Respond with ONLY a JSON object in this exact format:
-{{"score": 0.0-1.0, "reason": "brief explanation"}}
-
-Be strict - only give high scores if the asset genuinely matches the concept."""
-
-        settings = get_settings()
-        configs = [
-            _LLMConfig("groq",     settings.groq_api_key,     _GROQ_BASE,     "llama-3.1-8b-instant"),
-            _LLMConfig("cerebras", settings.cerebras_api_key, _CEREBRAS_BASE, "llama3.1-8b"),
-            _LLMConfig("gemini",   settings.gemini_api_key,   _GEMINI_BASE,   "gemini-2.5-flash"),
-        ]
-        content = _call_with_fallback(
-            configs,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Does this asset match the concept '{concept}'?"},
-            ],
-            max_tokens=150,
-        )
-
-        # Parse the JSON response
-        try:
-            data = json.loads(content)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse VLM response as JSON: {e}")
-            raise ValueError(f"Invalid JSON response from VLM: {e}")
-
-        # Extract score
-        score = data.get("score", 0.0)
-        # Ensure score is in valid range
-        if not isinstance(score, (int, float)):
-            score = 0.0
-        score = max(0.0, min(1.0, float(score)))
-
-        # Extract reason or use default
-        reason = data.get("reason", "validation completed")
-        if not isinstance(reason, str):
-            reason = "validation completed"
-
-        # Determine validity based on threshold
-        is_valid = score >= self.threshold
-
-        if not is_valid:
-            logger.warning(
-                f"Asset validation failed for concept '{concept}': "
-                f"score {score:.2f} < threshold {self.threshold}"
-            )
-
-        return ValidationResult(
-            score=score,
-            is_valid=is_valid,
-            reason=reason,
-        )
 
 
 # SVG element patterns for counting elements in SVG strings
@@ -991,66 +721,22 @@ def generate_enhanced_scenes(
         scene_results: list[dict] = [{} for _ in range(actual_scene_count)]
 
         def process_scene(scene_info: dict) -> dict:
-            """Process a single scene: discover assets and validate."""
+            """Discover asset for one scene. No validation — accept any tier hit."""
             scene_id = scene_info["scene_id"]
             manifest_entry = scene_info["manifest_entry"]
-
             logger.info(f"Processing scene {scene_id}: {manifest_entry[:50]}...")
 
-            # Initialize agents
             asset_discovery = AssetDiscoveryAgent()
-            visual_validator = VisualValidator()
+            asset = asset_discovery.discover_assets(manifest_entry, scene_id)
 
-            # Discover assets with up to 3 retries for validation failures.
-            # Rejected illustration URLs are accumulated so each retry skips candidates
-            # that have already been evaluated and scored below threshold.
-            max_retries = 3
-            asset = None
-            asset_description = ""
-            validation_result = None
-            excluded_urls: set[str] = set()
-
-            for retry in range(max_retries):
-                asset = asset_discovery.discover_assets(
-                    manifest_entry, scene_id, excluded_urls=excluded_urls
-                )
-
-                if asset is None:
-                    logger.info(f"Scene {scene_id}: No asset found, will use template fallback")
-                    break
-
-                if isinstance(asset, IllustrationCandidate):
-                    asset_description = f"Illustration: {asset.title} (provider: {asset.provider})"
-                else:
-                    asset_description = f"SVG icon for: {manifest_entry}"
-
-                validation_result = visual_validator.validate(asset_description, manifest_entry)
-
-                # Relaxed validation for bespoke AI assets: if it's bespoke, we accept it 
-                # more easily to avoid falling back to shitty templates.
-                is_bespoke = isinstance(asset, IllustrationCandidate) and asset.provider == "ai-illustrator"
-                threshold = 0.3 if is_bespoke else visual_validator.threshold
-
-                if validation_result.score >= threshold:
-                    logger.info(
-                        f"Scene {scene_id}: Asset validated (score: {validation_result.score:.2f}, threshold: {threshold})"
-                    )
-                    break
-                else:
-                    logger.info(
-                        f"Scene {scene_id}: Validation failed (score: {validation_result.score:.2f}), "
-                        f"retrying... (attempt {retry + 1}/{max_retries})"
-                    )
-                    # Exclude this URL so the next retry picks a different candidate.
-                    if isinstance(asset, IllustrationCandidate):
-                        excluded_urls.add(asset.url)
+            if asset is None:
+                logger.info(f"Scene {scene_id}: no asset found, will render text-only")
 
             return {
                 "scene_id": scene_id,
                 "asset": asset,
                 "manifest_entry": manifest_entry,
                 "narration": scene_info["narration"],
-                "validation_result": validation_result,
             }
 
         # Process scenes in parallel with ThreadPoolExecutor(max_workers=4)
@@ -1074,35 +760,26 @@ def generate_enhanced_scenes(
             asset = result["asset"]
             manifest_entry = result["manifest_entry"]
             narration = result["narration"]
-            validation_result = result.get("validation_result")
 
-            # Get actual audio duration if provided, otherwise use default
             audio_duration_ms = provided_durations.get(scene_id, 15000)
-
-            # Determine timing
             timing = animation_mapper.map_timing(asset, audio_duration_ms, scene_id)
 
-            # Determine svg_path and svg_content based on asset type
             if isinstance(asset, IllustrationCandidate):
-                # Illustration asset - use illustration:// prefix
                 svg_path = f"illustration://{asset.url}"
-                # Use pre-fetched markup if available
                 svg_content = asset.svg_markup or f"<!-- illustration: {asset.title} from {asset.provider} -->"
                 metaphor_hint = asset.title
             elif isinstance(asset, str) and asset:
-                # SVG asset from Iconify — normalize to whiteboard style (400×300 viewBox,
-                # stroke-only, no fill) the same way the classic pipeline does.
+                # SVG from Iconify — normalize to whiteboard style
                 from backend.services.icon_fetcher import normalize_svg
                 svg_path = f"inline://scene_{scene_id}.svg"
                 svg_content = normalize_svg(asset)
                 metaphor_hint = manifest_entry
             else:
-                # No asset found - use fallback template
-                template_name = _choose_fallback_template(manifest_entry, scene_id - 1, None)
-                svg_content = _fallback_svg_markup(template_name, scene_id - 1)
-                svg_path = f"inline://scene_{scene_id}.svg"
-                metaphor_hint = _FALLBACK_TEMPLATE_HINT.get(template_name, template_name)
-                logger.info(f"Scene {scene_id}: Using fallback template '{template_name}'")
+                # All tiers missed — text-only scene, no placeholder
+                logger.info(f"Scene {scene_id}: rendering text-only (no visual asset)")
+                svg_path = "none://"
+                svg_content = ""
+                metaphor_hint = ""
 
             # Create SceneChoreography with all required fields
             # Note: audio_path and audio_duration_ms would normally come from TTS service

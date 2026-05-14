@@ -13,18 +13,23 @@ can use existing hardcoded templates as a safety net.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
+# Local disk cache for successful Iconify fetches (avoids repeat network calls)
+_ICONIFY_CACHE_DIR = Path(os.environ.get("ASSET_CACHE_DIR", "/tmp/iconify_cache"))
+
 # ---------------------------------------------------------------------------
 # Preferred icon set prefixes (tried in order for search result selection)
 # ---------------------------------------------------------------------------
-_PREFERRED_PREFIXES = ("tabler", "lucide", "carbon")
+_PREFERRED_PREFIXES = ("tabler", "lucide", "carbon", "material-symbols", "ph", "mdi")
 
 # ---------------------------------------------------------------------------
 # Abstract-word fallback map — for terms the LLM produces that have no
@@ -116,10 +121,17 @@ def fetch_icon_svg(keyword: str, base_url: str = "https://api.iconify.design") -
     """Search Iconify for keyword and return a raw SVG string.
 
     Returns None on any failure (network error, timeout, no results, bad SVG).
-    Callers should fall back to hardcoded templates when None is returned.
+    Successful fetches are cached to disk to avoid repeat network calls.
     """
     if not keyword or not keyword.strip():
         return None
+
+    # Check disk cache first
+    cache_key = re.sub(r"[^\w-]", "_", keyword.strip().lower())
+    cache_file = _ICONIFY_CACHE_DIR / f"{cache_key}.svg"
+    if cache_file.exists():
+        logger.debug("icon_fetcher: cache hit for '%s'", keyword)
+        return cache_file.read_text(encoding="utf-8")
 
     prefixes = ",".join(_PREFERRED_PREFIXES)
     search_url = f"{base_url}/search"
@@ -172,6 +184,14 @@ def fetch_icon_svg(keyword: str, base_url: str = "https://api.iconify.design") -
         return None
 
     logger.info("icon_fetcher: fetched %s for keyword '%s'", chosen, keyword)
+
+    # Write to disk cache for future requests
+    try:
+        _ICONIFY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(raw_svg, encoding="utf-8")
+    except Exception as cache_exc:
+        logger.debug("icon_fetcher: cache write failed: %s", cache_exc)
+
     return raw_svg
 
 

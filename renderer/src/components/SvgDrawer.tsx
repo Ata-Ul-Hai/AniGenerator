@@ -114,9 +114,6 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
-  const allNodes = useMemo(() => parseSvgNodes(svgContent || ''), [svgContent]);
-  const viewBox = useMemo(() => extractViewBox(svgContent || ''), [svgContent]);
-
   const entranceSpring = spring({fps, frame, config: {damping: 100, stiffness: 50}});
   const sceneOpacity = interpolate(
     frame,
@@ -124,6 +121,21 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
     [0, 1, 1, 0],
     {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
   );
+
+  // Text-only scene — no SVG asset. Render a clean blank canvas.
+  if (!svgContent || svgContent.trim() === '') {
+    return (
+      <AbsoluteFill style={{
+        backgroundColor: '#fdfdfd',
+        backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
+        backgroundSize: '50px 50px',
+        opacity: sceneOpacity,
+      }} />
+    );
+  }
+
+  const allNodes = useMemo(() => parseSvgNodes(svgContent), [svgContent]);
+  const viewBox = useMemo(() => extractViewBox(svgContent), [svgContent]);
 
   return (
     <AbsoluteFill style={{
