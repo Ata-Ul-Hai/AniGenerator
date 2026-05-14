@@ -16,16 +16,42 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 _MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-_INDEX_PATH = Path(os.environ.get("ASSET_INDEX_PATH", "/app/assets/index.json"))
 _THRESHOLD = float(os.environ.get("SEMANTIC_THRESHOLD", "0.30"))
+
+# Resolve index path:
+#   1. ASSET_INDEX_PATH env var (absolute path — set in Cloud Run / .env)
+#   2. Anchored fallback: <project_root>/assets/index.json
+#      __file__ = .../backend/services/semantic_search.py  →  ../../assets/index.json
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_DEFAULT_INDEX = _PROJECT_ROOT / "assets" / "index.json"
+_INDEX_PATH = Path(os.environ.get("ASSET_INDEX_PATH", str(_DEFAULT_INDEX)))
+
+
+def _try_fetch_from_gcs() -> bool:
+    """Attempt to download index.json from GCS if missing locally. Returns True on success."""
+    gcs_bucket = os.environ.get("GCS_ASSETS_BUCKET", "gs://my-ani-gen-bucket")
+    bucket_name = gcs_bucket.removeprefix("gs://")
+    try:
+        from google.cloud import storage  # noqa: PLC0415
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob("assets/index.json")
+        _INDEX_PATH.parent.mkdir(parents=True, exist_ok=True)
+        blob.download_to_filename(str(_INDEX_PATH))
+        logger.info("semantic_search: downloaded index.json from gs://%s/assets/index.json", bucket_name)
+        return True
+    except Exception as e:
+        logger.warning("semantic_search: GCS fetch failed: %s — tier 1 disabled", e)
+        return False
 
 
 @lru_cache(maxsize=1)
 def _load_index() -> tuple[list[dict], np.ndarray] | None:
     """Load index.json and stack embeddings into a matrix. Cached after first call."""
     if not _INDEX_PATH.exists():
-        logger.warning("semantic_search: index not found at %s — tier 1 disabled", _INDEX_PATH)
-        return None
+        logger.warning("semantic_search: index not found at %s — attempting GCS fetch", _INDEX_PATH)
+        if not _try_fetch_from_gcs():
+            return None
     try:
         with open(_INDEX_PATH, encoding="utf-8") as f:
             entries = json.load(f)
