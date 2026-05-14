@@ -410,11 +410,17 @@ class AssetDiscoveryAgent:
                 configs,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Extract Iconify keywords from: {manifest_entry}"},
+                    # Groq requires the word 'json' in the message body when
+                    # response_format=json_object is used — keep 'Return JSON' here.
+                    {"role": "user", "content": f"Return JSON. Extract Iconify keywords from: {manifest_entry}"},
                 ],
                 max_tokens=80,
             )
-            data = json.loads(content)
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                logger.debug("LLM keyword response was not valid JSON: %s", content[:80])
+                return None
             if isinstance(data, list):
                 keywords = data
             elif isinstance(data, dict):
@@ -790,18 +796,25 @@ def generate_enhanced_scenes(
                 svg_content = ""
                 metaphor_hint = ""
 
+            narration_text = narration or manifest_entry
+            if not narration_text or not narration_text.strip():
+                logger.warning(
+                    f"Scene {scene_id}: skipping — empty narration after rate limit exhausted all providers"
+                )
+                continue
+
             # Create SceneChoreography with all required fields
             # Note: audio_path and audio_duration_ms would normally come from TTS service
             # For now, we use placeholder values
             scene = SceneChoreography(
                 scene_id=scene_id,
-                narration=narration or manifest_entry,
-                svg_markup=svg_content,  # Using svg_content as svg_markup
+                narration=narration_text,
+                svg_markup=svg_content,
                 metaphor_hint=metaphor_hint,
                 audio_path=f"audio/scene_{scene_id}.mp3",  # Placeholder
                 svg_path=svg_path,
                 svg_content=svg_content,
-                audio_duration_ms=audio_duration_ms,  # Use actual duration
+                audio_duration_ms=audio_duration_ms,
                 draw_start_ms=timing.draw_start_ms,
                 draw_duration_ms=timing.draw_duration_ms,
                 hold_ms=timing.hold_ms,
