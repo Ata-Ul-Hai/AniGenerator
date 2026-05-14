@@ -43,12 +43,16 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=1440, alias="ACCESS_TOKEN_EXPIRE_MINUTES") # 24h
     allowed_origins: str = Field(default="*", alias="ALLOWED_ORIGINS")
 
-    # ── MULTI-MODEL ANIMATION DIRECTOR ───────────────────────────────────────
+    # ── SEMANTIC ASSET PIPELINE ──────────────────────────────────────────────
     use_multi_model_director: bool = Field(default=False, alias="USE_MULTI_MODEL_DIRECTOR")
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     cerebras_api_key: str = Field(default="", alias="CEREBRAS_API_KEY")
-    visual_validation_threshold: float = Field(default=0.6, alias="VISUAL_VALIDATION_THRESHOLD")
-    illustration_cache_ttl_seconds: int = Field(default=3600, alias="ILLUSTRATION_CACHE_TTL_SECONDS")
+    
+    asset_index_path: str = Field(default="../assets/index.json", alias="ASSET_INDEX_PATH")
+    asset_undraw_dir: str = Field(default="../assets/undraw", alias="ASSET_UNDRAW_DIR")
+    asset_cache_dir: str = Field(default="/tmp/iconify_cache", alias="ASSET_CACHE_DIR")
+    semantic_threshold: float = Field(default=0.30, alias="SEMANTIC_THRESHOLD")
+    gcs_assets_bucket: str = Field(default="gs://my-ani-gen-bucket", alias="GCS_ASSETS_BUCKET")
 
     # ── PRODUCTION ASSETS ────────────────────────────────────────────────────
     gcs_bucket_name: str | None = Field(default=None, alias="GCS_BUCKET_NAME")
