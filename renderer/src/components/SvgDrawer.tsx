@@ -145,16 +145,19 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
       backgroundImage: 'radial-gradient(#e5e5e5 1px, transparent 1px)',
       backgroundSize: '50px 50px',
       opacity: sceneOpacity,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
     }}>
       <div style={{
-        flex: 1,
+        width: '60%',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         transform: `scale(${0.9 + entranceSpring * 0.1})`,
       }}>
         <svg viewBox={viewBox} xmlns="http://www.w3.org/2000/svg"
-          style={{width: '75%', height: '75%', overflow: 'visible'}}>
+          style={{width: '100%', height: 'auto', overflow: 'visible', display: 'block'}}>
           {allNodes.map((node, i) => {
             const elementDelay = (i / Math.max(1, allNodes.length)) * drawDurationFrames * 0.7;
             const elementProgress = interpolate(
