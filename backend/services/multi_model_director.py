@@ -404,6 +404,8 @@ class AssetDiscoveryAgent:
                 "- Good examples: 'lock', 'server', 'piggy-bank', 'trending-up', 'shield', 'database', 'rocket'\n"
                 "- Bad examples: 'containerized applications', 'financial growth', 'security concept'\n"
                 "- No abstract concepts. No multi-word phrases without hyphens.\n"
+                "- Never return brand names, company names, or trademarked terms.\n"
+                "- Never return 'logo', 'brand', 'icon', or 'image' as a keyword.\n"
                 "Return ONLY: {\"keywords\": [\"word1\", \"word2\", \"word3\"]}"
             )
             content = _call_with_fallback(
@@ -428,9 +430,14 @@ class AssetDiscoveryAgent:
             else:
                 return None
             # Only keep short (≤25 chars), hyphenated-safe strings
+            # Also strip known bad terms that slip through despite prompt instructions
+            _DENYLIST = {"logo", "brand", "icon", "image", "symbol", "trademark"}
             keywords = [
                 k.strip().lower() for k in keywords
-                if isinstance(k, str) and k.strip() and len(k.strip()) <= 25
+                if isinstance(k, str)
+                and k.strip()
+                and len(k.strip()) <= 25
+                and k.strip().lower() not in _DENYLIST
             ]
             return keywords if keywords else None
         except Exception as e:
@@ -799,9 +806,14 @@ def generate_enhanced_scenes(
             narration_text = narration or manifest_entry
             if not narration_text or not narration_text.strip():
                 logger.warning(
-                    f"Scene {scene_id}: skipping — empty narration after rate limit exhausted all providers"
+                    f"Scene {scene_id}: skipping — empty narration/context after provider rate limit"
                 )
                 continue
+
+            # For text-only scenes, fall back to manifest_entry as the metaphor hint
+            # so SceneChoreography is never constructed with an empty required field
+            if not metaphor_hint:
+                metaphor_hint = manifest_entry or f"scene {scene_id}"
 
             # Create SceneChoreography with all required fields
             # Note: audio_path and audio_duration_ms would normally come from TTS service
