@@ -47,7 +47,9 @@ print('MiniLM model cached.')
 
 COPY backend /app/backend
 COPY renderer /app/renderer
-COPY assets /app/assets
+# assets/undraw/ and assets/index.json are gitignored — fetched from GCS at startup.
+# Only create the directory here so the chown below works.
+RUN mkdir -p /app/assets/undraw
 COPY scripts /app/scripts
 
 # Use npm ci for deterministic, reproducible installs from lockfile
