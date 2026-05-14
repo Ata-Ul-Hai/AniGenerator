@@ -48,8 +48,8 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     cerebras_api_key: str = Field(default="", alias="CEREBRAS_API_KEY")
     
-    asset_index_path: str = Field(default="../assets/index.json", alias="ASSET_INDEX_PATH")
-    asset_undraw_dir: str = Field(default="../assets/undraw", alias="ASSET_UNDRAW_DIR")
+    asset_index_path: str = Field(default="assets/index.json", alias="ASSET_INDEX_PATH")
+    asset_undraw_dir: str = Field(default="assets/undraw/svg", alias="ASSET_UNDRAW_DIR")
     asset_cache_dir: str = Field(default="/tmp/iconify_cache", alias="ASSET_CACHE_DIR")
     semantic_threshold: float = Field(default=0.30, alias="SEMANTIC_THRESHOLD")
     gcs_assets_bucket: str = Field(default="gs://my-ani-gen-bucket", alias="GCS_ASSETS_BUCKET")
