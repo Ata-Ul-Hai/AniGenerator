@@ -383,8 +383,10 @@ class AssetDiscoveryAgent:
 
     def _generate_keywords_with_llm(self, manifest_entry: str) -> list[str] | None:
         """
-        Generate keywords using the LLM fallback chain (Groq → Cerebras → Gemini).
+        Generate Iconify-compatible keywords using the LLM fallback chain.
 
+        The prompt forces single hyphenated nouns/verbs that match Iconify's
+        tag vocabulary (e.g. 'piggy-bank', 'lock', 'trending-up', 'server').
         Returns None if all providers fail or are unconfigured.
         """
         try:
@@ -395,19 +397,22 @@ class AssetDiscoveryAgent:
                 _LLMConfig("gemini",   settings.gemini_api_key,   _GEMINI_BASE,   "gemini-2.5-flash"),
             ]
             system_prompt = (
-                "Extract 1-3 concise search keywords for finding visual assets "
-                "(animations or icons).\n"
-                "Return ONLY a JSON object with a 'keywords' array, like {\"keywords\": [\"word1\", \"word2\"]}.\n"
-                "Focus on concrete, visual nouns that can be illustrated or animated.\n"
-                "Do not include verbs or abstract concepts."
+                "Extract 3 keywords for finding vector icons on Iconify.\n"
+                "Rules:\n"
+                "- Each keyword must be a single word or hyphenated noun/verb.\n"
+                "- Use Iconify vocabulary: simple, concrete objects or actions.\n"
+                "- Good examples: 'lock', 'server', 'piggy-bank', 'trending-up', 'shield', 'database', 'rocket'\n"
+                "- Bad examples: 'containerized applications', 'financial growth', 'security concept'\n"
+                "- No abstract concepts. No multi-word phrases without hyphens.\n"
+                "Return ONLY: {\"keywords\": [\"word1\", \"word2\", \"word3\"]}"
             )
             content = _call_with_fallback(
                 configs,
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Extract keywords from: {manifest_entry}"},
+                    {"role": "user", "content": f"Extract Iconify keywords from: {manifest_entry}"},
                 ],
-                max_tokens=100,
+                max_tokens=80,
             )
             data = json.loads(content)
             if isinstance(data, list):
@@ -416,7 +421,11 @@ class AssetDiscoveryAgent:
                 keywords = data.get("keywords", data.get("items", []))
             else:
                 return None
-            keywords = [k for k in keywords if isinstance(k, str) and k.strip()]
+            # Only keep short (≤25 chars), hyphenated-safe strings
+            keywords = [
+                k.strip().lower() for k in keywords
+                if isinstance(k, str) and k.strip() and len(k.strip()) <= 25
+            ]
             return keywords if keywords else None
         except Exception as e:
             logger.debug(f"LLM keyword generation failed: {e}")
