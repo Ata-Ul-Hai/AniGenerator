@@ -114,6 +114,11 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
 
+  // Hooks must always be called unconditionally (React rules of hooks).
+  // Pass empty string default so these are safe even for text-only scenes.
+  const allNodes = useMemo(() => parseSvgNodes(svgContent || ''), [svgContent]);
+  const viewBox = useMemo(() => extractViewBox(svgContent || ''), [svgContent]);
+
   const entranceSpring = spring({fps, frame, config: {damping: 100, stiffness: 50}});
   const sceneOpacity = interpolate(
     frame,
@@ -134,9 +139,6 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
     );
   }
 
-  const allNodes = useMemo(() => parseSvgNodes(svgContent), [svgContent]);
-  const viewBox = useMemo(() => extractViewBox(svgContent), [svgContent]);
-
   return (
     <AbsoluteFill style={{
       backgroundColor: '#fdfdfd',
@@ -154,7 +156,6 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
         <svg viewBox={viewBox} xmlns="http://www.w3.org/2000/svg"
           style={{width: '75%', height: '75%', overflow: 'visible'}}>
           {allNodes.map((node, i) => {
-            // Staggered animation: each element starts slightly after the previous one
             const elementDelay = (i / Math.max(1, allNodes.length)) * drawDurationFrames * 0.7;
             const elementProgress = interpolate(
               frame - elementDelay,
@@ -162,13 +163,12 @@ export const SvgDrawer: React.FC<SvgDrawerProps> = ({svgContent, drawDurationFra
               [0, 1],
               {extrapolateLeft: 'clamp', extrapolateRight: 'clamp'}
             );
-            
             return (
-              <RoughElement 
-                key={`${i}-${node.kind}`} 
-                node={node} 
+              <RoughElement
+                key={`${i}-${node.kind}`}
+                node={node}
                 index={i}
-                progress={elementProgress} 
+                progress={elementProgress}
               />
             );
           })}
