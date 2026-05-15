@@ -30,13 +30,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Modern lifespan handler replacing deprecated on_event."""
     settings = get_settings()
-    if settings.auto_create_tables:
-        from backend.db.database import Base, engine
-        Base.metadata.create_all(bind=engine)
-        
+    # Database initialization is now handled exclusively by Alembic migrations.
+    logger.info("Application lifespan started.")
+
+    # Ensure the admin user always exists (idempotent seed)
+    try:
         from scripts.seed_admin import seed_admin
-        seed_admin() # Ensure admin exists with the secret password
-        logger.info("Auto-created database tables and verified admin user at startup")
+        seed_admin()
+    except Exception as e:
+        logger.warning("seed_admin failed (non-fatal): %s", e)
 
     if settings.recover_stale_jobs_on_startup:
         db = SessionLocal()

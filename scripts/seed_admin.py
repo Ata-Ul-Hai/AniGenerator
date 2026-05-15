@@ -2,11 +2,11 @@ import os
 import sys
 import bcrypt
 from sqlalchemy.orm import Session
-from backend.db.database import SessionLocal, create_all_tables
+from backend.db.database import SessionLocal
 from backend.db.models import User
 
 def seed_admin():
-    create_all_tables()
+    # NOTE: Schema is managed by Alembic migrations. Do NOT call create_all_tables() here.
     db = SessionLocal()
     try:
         # Check if admin already exists

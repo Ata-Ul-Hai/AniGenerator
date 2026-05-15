@@ -19,22 +19,37 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Upgrade schema."""
-    # 1. Create users table
-    op.create_table('users',
-        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column('username', sa.String(length=64), nullable=False),
-        sa.Column('email', sa.String(length=255), nullable=False),
-        sa.Column('hashed_password', sa.String(length=255), nullable=False),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default='1'),
-        sa.Column('is_admin', sa.Boolean(), nullable=False, server_default='0'),
-        sa.Column('is_beta_authorized', sa.Boolean(), nullable=False, server_default='0'),
-        sa.Column('has_seen_onboarding', sa.Boolean(), nullable=False, server_default='0'),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
-    op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+    # Pre-inspect indexes BEFORE entering any batch_alter_table blocks
+    conn = op.get_bind()
+    from sqlalchemy import inspect as sa_inspect
+    inspector = sa_inspect(conn)
+
+    scenes_indexes = [idx['name'] for idx in inspector.get_indexes('scenes')]
+    videos_indexes = [idx['name'] for idx in inspector.get_indexes('videos')]
+
+    # 1. Create users table (if not exists)
+    if 'users' not in inspector.get_table_names():
+        op.create_table('users',
+            sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+            sa.Column('username', sa.String(length=64), nullable=False),
+            sa.Column('email', sa.String(length=255), nullable=False),
+            sa.Column('hashed_password', sa.String(length=255), nullable=False),
+            sa.Column('is_active', sa.Boolean(), nullable=False, server_default='1'),
+            sa.Column('is_admin', sa.Boolean(), nullable=False, server_default='0'),
+            sa.Column('is_beta_authorized', sa.Boolean(), nullable=False, server_default='0'),
+            sa.Column('has_seen_onboarding', sa.Boolean(), nullable=False, server_default='0'),
+            sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+        op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
+    else:
+        # If users table exists, check for the indexes
+        existing_indexes = [idx['name'] for idx in inspector.get_indexes('users')]
+        if 'ix_users_email' not in existing_indexes:
+            op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+        if 'ix_users_username' not in existing_indexes:
+            op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
 
     # 2. Update jobs table (Batch mode for SQLite)
     with op.batch_alter_table('jobs', schema=None) as batch_op:
@@ -43,26 +58,23 @@ def upgrade() -> None:
         batch_op.drop_index('ix_jobs_created_at')
         batch_op.drop_index('ix_jobs_status')
 
-    # 3. Update scenes table (Batch mode for SQLite)
+    # 3. Update scenes table — add only the NEW columns not in 2c1ca0370dce
     with op.batch_alter_table('scenes', schema=None) as batch_op:
         batch_op.add_column(sa.Column('on_screen_text', sa.Text(), nullable=False, server_default=''))
         batch_op.add_column(sa.Column('svg_path', sa.String(length=512), nullable=False, server_default=''))
         batch_op.add_column(sa.Column('draw_start_ms', sa.Integer(), nullable=False, server_default='0'))
         batch_op.add_column(sa.Column('hold_ms', sa.Integer(), nullable=False, server_default='0'))
-        batch_op.add_column(sa.Column('canvas_x', sa.Integer(), nullable=False, server_default='0'))
-        batch_op.add_column(sa.Column('canvas_y', sa.Integer(), nullable=False, server_default='0'))
-        batch_op.add_column(sa.Column('canvas_width', sa.Integer(), nullable=False, server_default='1920'))
-        batch_op.add_column(sa.Column('canvas_height', sa.Integer(), nullable=False, server_default='1080'))
-        batch_op.add_column(sa.Column('layout_direction', sa.String(length=32), nullable=False, server_default='right'))
-        batch_op.add_column(sa.Column('kinetic_words_json', sa.Text(), nullable=False, server_default='[]'))
         batch_op.add_column(sa.Column('svg_content_secondary', sa.Text(), nullable=True))
         batch_op.add_column(sa.Column('svg_path_secondary', sa.String(length=512), nullable=True))
-        batch_op.drop_index('ix_scenes_job_id')
-        batch_op.drop_index('ix_scenes_job_scene')
+        if 'ix_scenes_job_id' in scenes_indexes:
+            batch_op.drop_index('ix_scenes_job_id')
+        if 'ix_scenes_job_scene' in scenes_indexes:
+            batch_op.drop_index('ix_scenes_job_scene')
 
     # 4. Update videos table (Batch mode for SQLite)
     with op.batch_alter_table('videos', schema=None) as batch_op:
-        batch_op.drop_index('ix_videos_job_id')
+        if 'ix_videos_job_id' in videos_indexes:
+            batch_op.drop_index('ix_videos_job_id')
 
 
 def downgrade() -> None:
