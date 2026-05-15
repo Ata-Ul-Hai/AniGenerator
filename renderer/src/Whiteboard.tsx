@@ -46,7 +46,7 @@ function computeCamera(
   scenes: SceneChoreography[],
   sceneFrames: number[],
   startFrames: number[],
-): {cameraCenterX: number; zoom: number} {
+): {cameraCenterX: number; cameraCenterY: number; zoom: number} {
   let idx = scenes.length - 1;
   for (let i = 0; i < startFrames.length; i++) {
     if (frame < startFrames[i] + sceneFrames[i]) {
@@ -56,7 +56,9 @@ function computeCamera(
   }
 
   const frameInScene = frame - startFrames[idx];
-  const sceneCenter = idx * SCENE_W + SCENE_W / 2;
+  const scene = scenes[idx];
+  const sceneCenterX = scene.canvas_x + SCENE_W / 2;
+  const sceneCenterY = scene.canvas_y + SCENE_H / 2;
 
   // ── Scene 0: no transition, start Ken-Burns immediately ───────────────────
   if (idx === 0) {
@@ -67,7 +69,7 @@ function computeCamera(
       extrapolateLeft: 'clamp',
       extrapolateRight: 'clamp',
     });
-    return {cameraCenterX: sceneCenter, zoom};
+    return {cameraCenterX: sceneCenterX, cameraCenterY: sceneCenterY, zoom};
   }
 
   // ── Transition: first TRANSITION_FRAMES of scene N>0 ────────────────────
@@ -76,7 +78,10 @@ function computeCamera(
   // Phase 3 [0.66, 1.0]: zoom in 0.88→1.0,  hold at current scene centre
   if (frameInScene < TRANSITION_FRAMES) {
     const t = frameInScene / TRANSITION_FRAMES;
-    const prevCenter = (idx - 1) * SCENE_W + SCENE_W / 2;
+    const prevScene = scenes[idx - 1];
+    const prevCenterX = prevScene.canvas_x + SCENE_W / 2;
+    const prevCenterY = prevScene.canvas_y + SCENE_H / 2;
+
     const eio = Easing.inOut(Easing.quad);
     const opts = {easing: eio, extrapolateLeft: 'clamp' as const, extrapolateRight: 'clamp' as const};
 
@@ -89,12 +94,19 @@ function computeCamera(
 
     const cameraCenterX =
       t < 0.33
-        ? prevCenter
+        ? prevCenterX
         : t < 0.66
-          ? interpolate(t, [0.33, 0.66], [prevCenter, sceneCenter], opts)
-          : sceneCenter;
+          ? interpolate(t, [0.33, 0.66], [prevCenterX, sceneCenterX], opts)
+          : sceneCenterX;
 
-    return {cameraCenterX, zoom};
+    const cameraCenterY =
+      t < 0.33
+        ? prevCenterY
+        : t < 0.66
+          ? interpolate(t, [0.33, 0.66], [prevCenterY, sceneCenterY], opts)
+          : sceneCenterY;
+
+    return {cameraCenterX, cameraCenterY, zoom};
   }
 
   // ── Scene rest: slow Ken-Burns zoom 1.0 → 1.04 ───────────────────────────
@@ -107,7 +119,7 @@ function computeCamera(
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
-  return {cameraCenterX: sceneCenter, zoom};
+  return {cameraCenterX: sceneCenterX, cameraCenterY: sceneCenterY, zoom};
 }
 
 // ── Root composition ──────────────────────────────────────────────────────────
@@ -135,10 +147,13 @@ export const Whiteboard: React.FC<RenderProps> = ({fps, scenes}) => {
   }
 
   const {sceneFrames, startFrames} = buildTimeline(scenes, validFps);
-  const {cameraCenterX, zoom} = computeCamera(frame, scenes, sceneFrames, startFrames);
+  const {cameraCenterX, cameraCenterY, zoom} = computeCamera(frame, scenes, sceneFrames, startFrames);
 
   const tx = VIEWPORT_W / 2 - cameraCenterX * zoom;
-  const ty = VIEWPORT_H / 2 - (SCENE_H / 2) * zoom;
+  const ty = VIEWPORT_H / 2 - cameraCenterY * zoom;
+
+  const worldWidth = Math.max(...scenes.map(s => s.canvas_x + SCENE_W));
+  const worldHeight = Math.max(...scenes.map(s => s.canvas_y + SCENE_H));
 
   return (
     <AbsoluteFill style={{background: '#fdfdfd', overflow: 'hidden'}}>
@@ -157,12 +172,12 @@ export const Whiteboard: React.FC<RenderProps> = ({fps, scenes}) => {
         }}
       />
 
-      {/* Canvas world — strict horizontal grid, ignores backend canvas_x/canvas_y */}
+      {/* Canvas world — absolute positioning based on backend coords */}
       <div
         style={{
           position: 'absolute',
-          width: scenes.length * SCENE_W,
-          height: SCENE_H,
+          width: worldWidth,
+          height: worldHeight,
           transform: `translate(${tx}px, ${ty}px) scale(${zoom})`,
           transformOrigin: '0 0',
         }}
@@ -183,8 +198,8 @@ export const Whiteboard: React.FC<RenderProps> = ({fps, scenes}) => {
               <div
                 style={{
                   position: 'absolute',
-                  left: i * SCENE_W,
-                  top: 0,
+                  left: scene.canvas_x,
+                  top: scene.canvas_y,
                   width: SCENE_W,
                   height: SCENE_H,
                   overflow: 'hidden',
@@ -269,3 +284,4 @@ export const Whiteboard: React.FC<RenderProps> = ({fps, scenes}) => {
     </AbsoluteFill>
   );
 };
+

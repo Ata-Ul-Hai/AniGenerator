@@ -155,13 +155,17 @@ def create_scenes(db: Session, job_id: str, choreography_scenes: list[dict]) -> 
             audio_path=s.get("audio_path", ""),
             svg_path=s.get("svg_path", ""),
             audio_duration_ms=s.get("audio_duration_ms", 0),
+            draw_start_ms=s.get("draw_start_ms", 0),
             draw_duration_ms=s.get("draw_duration_ms", 0),
+            hold_ms=s.get("hold_ms", 0),
             canvas_x=s.get("canvas_x", 0),
             canvas_y=s.get("canvas_y", 0),
             canvas_width=s.get("canvas_width", 1920),
             canvas_height=s.get("canvas_height", 1080),
             layout_direction=s.get("layout_direction", "right"),
             kinetic_words_json=json.dumps(s.get("kinetic_words", [])),
+            svg_content_secondary=s.get("svg_content_secondary"),
+            svg_path_secondary=s.get("svg_path_secondary"),
         )
         for i, s in enumerate(choreography_scenes)
     ]

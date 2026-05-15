@@ -18,9 +18,9 @@ logger = logging.getLogger(__name__)
 _MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 # Tiered thresholds for find_assets()
-_THRESHOLD_HIGH   = float(os.environ.get("SEMANTIC_THRESHOLD", "0.20"))  # primary results
-_THRESHOLD_MID    = 0.15  # fill remaining slots if < top_k above high
-_THRESHOLD_MIN    = 0.10  # last-resort — never return empty if any hit above this
+_THRESHOLD_HIGH   = float(os.environ.get("SEMANTIC_THRESHOLD", "0.35"))  # primary results
+_THRESHOLD_MID    = 0.25  # fill remaining slots if < top_k above high
+_THRESHOLD_MIN    = 0.20  # last-resort — never return empty if any hit above this
 
 # Resolve index path:
 #   1. ASSET_INDEX_PATH env var (absolute path — set in Cloud Run / .env)

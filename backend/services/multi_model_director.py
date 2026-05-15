@@ -172,44 +172,53 @@ class ContextualAnalyzer:
     def __init__(self):
         pass
 
-    def analyze(self, text_chunk: str) -> tuple[VisualManifest, ChoreographyMap]:
+    def analyze(self, text_chunk: str, target_count: int = 5) -> tuple[VisualManifest, ChoreographyMap]:
         logger.info(f"ContextualAnalyzer.analyze invoked with text chunk of length {len(text_chunk)}")
         try:
-            manifest, choreography = self._call_llm_api(text_chunk)
+            manifest, choreography = self._call_llm_api(text_chunk, target_count)
             logger.info("ContextualAnalyzer.analyze completed successfully")
             return manifest, choreography
         except Exception as e:
             logger.error(f"ContextualAnalyzer.analyze failed: {e}")
             return self._fallback_manifest(text_chunk)
 
-    def _call_llm_api(self, text_chunk: str) -> tuple[VisualManifest, ChoreographyMap]:
+    def _call_llm_api(self, text_chunk: str, target_count: int) -> tuple[VisualManifest, ChoreographyMap]:
         """Call the LLM with Groq → Cerebras → Gemini fallback."""
-        system_prompt = """You are a visual storytelling analyzer for an infinite-canvas whiteboard video.
-Analyze the given text and extract structured data for scene generation.
+        system_prompt_template = """You are a visual storytelling analyzer for an infinite-canvas whiteboard video.
+Analyze the given text and extract structured data for exactly {target_count} educational scenes.
+
+Narrative Rules:
+- The `narrative_flow` must be EDUCATIONAL, authoritative, and engaging. 
+- Target 30-45 words PER SCENE. 
+- Do NOT use bullet points or keywords; use full, spoken-style sentences.
+- Speak like an expert explaining a complex topic to a student.
+- Ensure the total narration covers the MOST IMPORTANT educational points from the text.
 
 Spatial rules for the canvas layout:
-- Scene 1 is always at the canvas origin (0,0) — do NOT specify layout_direction for it.
-- "right": next scene continues to the right (most common, use for sequential ideas)
-- "down": next scene goes below (use for contrast, depth, or subordinate concepts)
-- "diagonal-right": scene goes right and slightly down (use for progression or branching)
-- "diagonal-down": scene goes down and slightly right (use for subordinate details)
+- Scene 1 is at (0,0) — no direction for it.
+- "right": sequential ideas.
+- "down": contrast, depth, or subordinate concepts.
+- "diagonal-right": progression/branching.
+- "diagonal-down": subordinate details.
 
-Respond with valid JSON in this exact format:
+Respond with valid JSON:
 {
-  "concepts": ["concept1", "concept2", ...],
-  "themes": ["theme1", "theme2", ...],
-  "scene_guidance": ["visual hint for scene 1", "visual hint for scene 2", ...],
-  "narrative_flow": ["narration text for scene 1", "narration text for scene 2", ...],
-  "layout_directions": ["right", "down", "right", ...],
-  "kinetic_words": [["key1", "key2", "key3"], ["key1", "key2"], ...],
+  "concepts": ["educational concept 1", ...],
+  "themes": ["theme1", ...],
+  "scene_guidance": ["visual hint (e.g. 'a hand holding a box')", ...],
+  "narrative_flow": ["Full explanatory sentence 1. Full explanatory sentence 2...", ...],
+  "on_screen_labels": ["short punchy label", ...],
+  "layout_directions": ["right", ...],
+  "kinetic_words": [["key1", ...], ...],
   "pacing": "fast|medium|slow"
 }
 
 Notes:
-- layout_directions has one entry per scene starting from scene 2 (scene 1 has no direction).
-- kinetic_words has one subarray per scene: the 3-5 most impactful words from that scene's narration.
-- Only respond with the JSON, no other text."""
+- on_screen_labels: 3-6 IMPACTFUL words.
+- layout_directions: one per scene starting from scene 2.
+- Only respond with the JSON."""
 
+        system_prompt = system_prompt_template.format(target_count=target_count)
         settings = get_settings()
         configs = [
             _LLMConfig("groq",     settings.groq_api_key,     _GROQ_BASE,     "llama-3.3-70b-versatile"),
@@ -222,7 +231,7 @@ Notes:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text_chunk},
             ],
-            max_tokens=1200,
+            max_tokens=1500,
         )
 
         try:
@@ -235,6 +244,7 @@ Notes:
         themes = data.get("themes", [])
         scene_guidance = data.get("scene_guidance", [])
         narrative_flow = data.get("narrative_flow", [])
+        on_screen_labels = data.get("on_screen_labels", [])
         pacing = data.get("pacing", "medium")
         layout_directions = data.get("layout_directions", [])
         kinetic_words_per_scene = data.get("kinetic_words", [])
@@ -245,6 +255,7 @@ Notes:
         concepts = concepts[:7]
         scene_guidance = scene_guidance[:7]
         narrative_flow = narrative_flow[:7]
+        on_screen_labels = on_screen_labels[:7]
         layout_directions = layout_directions[:7]
         kinetic_words_per_scene = kinetic_words_per_scene[:7]
 
@@ -268,6 +279,7 @@ Notes:
         # Attach spatial data directly to choreography via extra attrs
         choreography.layout_directions = layout_directions  # type: ignore[attr-defined]
         choreography.kinetic_words_per_scene = kinetic_words_per_scene  # type: ignore[attr-defined]
+        choreography.on_screen_labels = on_screen_labels  # type: ignore[attr-defined]
 
         return manifest, choreography
 
@@ -320,7 +332,7 @@ def _set_cached(key: str, value: dict, ttl_seconds: int) -> None:
 
 _CANVAS_SCENE_W = 1920
 _CANVAS_SCENE_H = 1080
-_CANVAS_MARGIN = 80
+_CANVAS_MARGIN = 200
 
 _VALID_DIRECTIONS = {"right", "down", "diagonal-right", "diagonal-down"}
 
@@ -547,11 +559,17 @@ class AssetDiscoveryAgent:
                 keywords = data
             elif isinstance(data, dict):
                 keywords = data.get("keywords", data.get("items", []))
+                # Fallback: if 'keywords' is missing, try to find any list in the dict
+                if not keywords:
+                    for val in data.values():
+                        if isinstance(val, list):
+                            keywords = val
+                            break
             else:
                 return None
             # Only keep short (≤25 chars), hyphenated-safe strings
             # Also strip known bad terms that slip through despite prompt instructions
-            _DENYLIST = {"logo", "brand", "icon", "image", "symbol", "trademark"}
+            _DENYLIST = {"logo", "brand", "icon", "image", "symbol", "trademark", "whiteboard", "sketch", "drawing"}
             keywords = [
                 k.strip().lower() for k in keywords
                 if isinstance(k, str)
@@ -826,7 +844,7 @@ def generate_enhanced_scenes(
     try:
         # Step 1: Run ContextualAnalyzer.analyze() once per chunk (sequential)
         contextual_analyzer = ContextualAnalyzer()
-        manifest, choreography = contextual_analyzer.analyze(text_chunk)
+        manifest, choreography = contextual_analyzer.analyze(text_chunk, target_count=target_count)
 
         logger.info(
             f"Contextual analysis complete: {len(manifest.concepts)} concepts, "
@@ -866,11 +884,19 @@ def generate_enhanced_scenes(
                 else []
             )
 
-            entry = f"{guidance} {concept} {theme}".strip()
+            on_screen_labels = getattr(choreography, "on_screen_labels", [])
+            label = on_screen_labels[i] if i < len(on_screen_labels) else ""
+
+            # Build manifest_entry for discovery: skip generic themes
+            generic_themes = {"monochrome", "whiteboard", "hand-drawn", "sketch", "minimal", "flat", "simple"}
+            discovery_theme = theme if theme.lower() not in generic_themes else ""
+            entry = f"{guidance} {concept} {discovery_theme}".strip()
+            
             scene_entries.append({
                 "scene_id": i + 1,
                 "manifest_entry": entry or concept or f"Scene {i + 1}",
                 "narration": choreography.narrative_flow[i] if i < len(choreography.narrative_flow) else guidance,
+                "on_screen_text": label,
                 "pacing": choreography.pacing,
                 "layout_direction": direction,
                 "kinetic_words": kinetic,
@@ -907,6 +933,7 @@ def generate_enhanced_scenes(
                 "asset2": asset2,
                 "manifest_entry": manifest_entry,
                 "narration": scene_info["narration"],
+                "on_screen_text": scene_info.get("on_screen_text", ""),
                 "layout_direction": scene_info["layout_direction"],
                 "kinetic_words": scene_info["kinetic_words"],
                 "canvas_x": scene_info["canvas_x"],
@@ -964,7 +991,13 @@ def generate_enhanced_scenes(
             if not metaphor_hint:
                 metaphor_hint = manifest_entry or f"scene {scene_id}"
 
-            on_screen_text = " ".join(narration_text.split()[:6]) or narration_text
+            # Priority for on_screen_text: 
+            # 1. LLM-generated label 
+            # 2. First 6 words of narration
+            on_screen_text = result.get("on_screen_text")
+            if not on_screen_text:
+                on_screen_text = " ".join(narration_text.split()[:6]) or narration_text
+
             scene = SceneChoreography(
                 scene_id=scene_id,
                 narration=narration_text,
@@ -1000,13 +1033,5 @@ def generate_enhanced_scenes(
 
     except Exception as e:
         logger.error(f"generate_enhanced_scenes failed: {e}", exc_info=True)
-        # Delegate to generate_scenes() from llm_director.py on any unhandled exception
-        logger.info("Delegating to generate_scenes() from llm_director.py")
-
-        try:
-            from backend.services.llm_director import generate_scenes as llm_generate_scenes
-            return llm_generate_scenes(text_chunk, target_count, max_words_per_narration)
-        except Exception as fallback_error:
-            logger.error(f"Fallback to generate_scenes() also failed: {fallback_error}")
-            # Return empty list to avoid raising to caller
-            return []
+        # We no longer delegate to the legacy llm_director.
+        return []

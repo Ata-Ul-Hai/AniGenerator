@@ -32,43 +32,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     if settings.auto_create_tables:
         from backend.db.database import Base, engine
-        from sqlalchemy import text
         Base.metadata.create_all(bind=engine)
         
-        # Emergency Schema Patch: Ensure user_id exists in jobs table
-        with engine.connect() as conn:
-            try:
-                if engine.dialect.name == "sqlite":
-                    try:
-                        conn.execute(text("ALTER TABLE jobs ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;"))
-                        conn.commit()
-                        logger.info("Local SQLite: 'user_id' column added.")
-                    except:
-                        pass  # Column already exists
-                else:
-                    conn.execute(text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;"))
-                    conn.commit()
-                    logger.info("Database schema verified: 'user_id' column ensured in 'jobs' table.")
-            except Exception as e:
-                logger.warning(f"Schema Patch Note: {e} (This is usually fine if column already exists)")
-
-        # Schema Patch: Ensure svg_path exists in scenes table (added for Lottie support)
-        with engine.connect() as conn:
-            try:
-                if engine.dialect.name == "sqlite":
-                    try:
-                        conn.execute(text("ALTER TABLE scenes ADD COLUMN svg_path VARCHAR(512) NOT NULL DEFAULT '';"))
-                        conn.commit()
-                        logger.info("Local SQLite: 'svg_path' column added to 'scenes' table.")
-                    except:
-                        pass  # Column already exists
-                else:
-                    conn.execute(text("ALTER TABLE scenes ADD COLUMN IF NOT EXISTS svg_path VARCHAR(512) NOT NULL DEFAULT '';"))
-                    conn.commit()
-                    logger.info("Database schema verified: 'svg_path' column ensured in 'scenes' table.")
-            except Exception as e:
-                logger.warning(f"Schema Patch Note (svg_path): {e} (This is usually fine if column already exists)")
-
         from scripts.seed_admin import seed_admin
         seed_admin() # Ensure admin exists with the secret password
         logger.info("Auto-created database tables and verified admin user at startup")

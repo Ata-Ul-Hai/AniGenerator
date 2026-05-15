@@ -19,7 +19,7 @@ from backend.db import crud
 from backend.db.database import SessionLocal
 from backend.services.audio_gen import synthesize
 from backend.services.icon_fetcher import fetch_icon_svg, keyword_from_hint, normalize_svg
-from backend.services.llm_director import generate_scenes
+from backend.services.multi_model_director import generate_enhanced_scenes
 from backend.services.parser import chunk_text, smart_sample_text
 from backend.services.storage_service import get_storage_provider
 
@@ -33,24 +33,11 @@ def calculate_scene_count(text: str) -> int:
     words = len(text.split())
     duration_s = (words / 130) * 60
     count = int(duration_s / 12)
-    return max(5, min(count, 8))
+    return max(6, min(count, 12))
 
 
-def _get_scene_generator():
-    """
-    Get the appropriate scene generator based on settings.
-    
-    Returns generate_enhanced_scenes if use_multi_model_director is True,
-    otherwise returns the standard generate_scenes.
-    
-    Note: generate_scenes returns list[SceneScript], 
-    generate_enhanced_scenes returns list[SceneChoreography]
-    """
-    settings = get_settings()
-    if settings.use_multi_model_director:
-        from backend.services.multi_model_director import generate_enhanced_scenes
-        return generate_enhanced_scenes
-    return generate_scenes
+# Scene generator is now exclusively the multi-model director
+_generate_scenes = generate_enhanced_scenes
 
 
 # ── ENGINE INITIALIZATION ──────────────────────────────────────────────────
@@ -116,7 +103,8 @@ def _synthesize_scene_choreography(
             kinetic_words=enhanced.kinetic_words,
         )
 
-    # Classic path: use pre-fetched SVG if provided, otherwise fetch fresh
+    # Classic path is deprecated; enhanced is now the only path.
+    # We still handle basic synthesis if enhanced data is missing for some reason.
     if pre_fetched_svg is not None:
         svg_content = pre_fetched_svg
     else:
@@ -127,9 +115,12 @@ def _synthesize_scene_choreography(
             _icon_name, raw_svg = result
             svg_content = normalize_svg(raw_svg)
         else:
-            from backend.services.llm_director import _choose_fallback_template, _fallback_svg_markup
-            template = _choose_fallback_template(scene.narration, scene.scene_id, None)
-            svg_content = _fallback_svg_markup(template, scene.scene_id)
+            # Fallback to a simple rect if everything fails (no more Bitcoin!)
+            svg_content = (
+                "<svg viewBox='0 0 400 300' xmlns='http://www.w3.org/2000/svg'>"
+                "<rect x='64' y='64' width='272' height='172' rx='16' fill='none' stroke='#1a1a1a' stroke-width='3'/>"
+                "</svg>"
+            )
 
     element_count = (
         svg_content.count('<path') + svg_content.count('<circle') +
@@ -206,16 +197,21 @@ def _generate_render_props_internal(
         audio_dir = Path(tmp_dir) / "audio"
         audio_dir.mkdir(parents=True, exist_ok=True)
 
-        # First pass: Generate scene scripts (narration only) using the base Gemini director.
-        # Always use generate_scenes here regardless of multi-model mode — we only need
-        # narrations to drive TTS at this stage. generate_enhanced_scenes runs in the
-        # second pass below (once audio durations are known) so it is never called twice.
-        raw_scenes: list[SceneScript] = []
-        for chunk_index, chunk in enumerate(chunks, start=1):
-            if len(raw_scenes) >= scene_count:
-                break
-            generated = generate_scenes(chunk, scene_count - len(raw_scenes), max_words_per_narration)
-            raw_scenes.extend(generated)
+        # Pass 1: Generate scene structures (narration + metaphors)
+        # Note: We call generate_enhanced_scenes without durations first to get the narrative flow.
+        enhanced_structures = generate_enhanced_scenes(
+            sampled_text,
+            scene_count,
+            max_words_per_narration
+        )
+        raw_scenes = [
+            SceneScript(
+                scene_id=s.scene_id,
+                narration=s.narration,
+                on_screen_text=s.on_screen_text,
+                metaphor_hint=s.metaphor_hint
+            ) for s in enhanced_structures
+        ]
 
         # Step 1: Synthesize TTS FIRST to get audio durations
         audio_durations: dict[int, int] = {}
@@ -229,67 +225,29 @@ def _generate_render_props_internal(
                 duration_ms, _ = future.result()
                 audio_durations[scene.scene_id] = duration_ms
 
-        # Step 2: If using multi-model director, regenerate with audio durations
-        # for proper timing calculations and canvas coordinate assignment.
-        if settings.use_multi_model_director:
-            try:
-                from backend.services.multi_model_director import generate_enhanced_scenes
-                enhanced_scenes = generate_enhanced_scenes(
-                    sampled_text,
-                    scene_count,
-                    max_words_per_narration,
-                    audio_durations=audio_durations
-                )
-                choreography_scenes = []
-                for scene in raw_scenes:
-                    enhanced = next((s for s in enhanced_scenes if s.scene_id == scene.scene_id), None)
-                    if enhanced:
-                        choreo = _synthesize_scene_choreography(scene, audio_dir, run_id, enhanced=enhanced)
-                        choreography_scenes.append(choreo)
-                    else:
-                        choreo = _synthesize_scene_choreography(scene, audio_dir, run_id)
-                        choreography_scenes.append(choreo)
-                # Fallback coordinate assignment if enhanced scenes lacked spatial data
-                if len(choreography_scenes) > 1 and all(s.canvas_x == 0 for s in choreography_scenes):
-                    choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
-            except Exception as e:
-                logger.warning(f"Enhanced scene generation failed, using classic fallback: {e}")
-                choreography_scenes = []
-                with ThreadPoolExecutor(max_workers=4) as tts_pool:
-                    futures = [tts_pool.submit(_synthesize_scene_choreography, scene, audio_dir, run_id) for scene in raw_scenes]
-                    for future in as_completed(futures):
-                        choreography_scenes.append(future.result())
-                choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
-        else:
-            # Classic path: pre-fetch icons serially (dedup), then synthesize audio in parallel
-            from backend.services.llm_director import _choose_fallback_template, _fallback_svg_markup
-            used_icon_names: set[str] = set()
-            svg_by_scene_id: dict[int, str] = {}
-            previous_template: str | None = None
-            for scene in raw_scenes:
-                keyword = keyword_from_hint(scene.metaphor_hint)
-                result = fetch_icon_svg(keyword, settings.iconify_base_url, exclude_names=used_icon_names)
-                if result is not None:
-                    icon_name, raw_svg = result
-                    used_icon_names.add(icon_name)
-                    svg_by_scene_id[scene.scene_id] = normalize_svg(raw_svg)
-                else:
-                    template = _choose_fallback_template(scene.narration, scene.scene_id, previous_template)
-                    previous_template = template
-                    svg_by_scene_id[scene.scene_id] = _fallback_svg_markup(template, scene.scene_id)
-
+        # Step 2: Regenerate with audio durations for timing/layout
+        try:
+            enhanced_scenes = generate_enhanced_scenes(
+                sampled_text,
+                scene_count,
+                max_words_per_narration,
+                audio_durations=audio_durations
+            )
             choreography_scenes = []
-            with ThreadPoolExecutor(max_workers=4) as tts_pool:
-                futures = [
-                    tts_pool.submit(
-                        _synthesize_scene_choreography, scene, audio_dir, run_id,
-                        None, svg_by_scene_id.get(scene.scene_id),
-                    )
-                    for scene in raw_scenes
-                ]
-                for future in as_completed(futures):
-                    choreography_scenes.append(future.result())
-            choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
+            for scene in raw_scenes:
+                enhanced = next((s for s in enhanced_scenes if s.scene_id == scene.scene_id), None)
+                if enhanced:
+                    choreo = _synthesize_scene_choreography(scene, audio_dir, run_id, enhanced=enhanced)
+                    choreography_scenes.append(choreo)
+                else:
+                    choreo = _synthesize_scene_choreography(scene, audio_dir, run_id)
+                    choreography_scenes.append(choreo)
+            # Fallback coordinate assignment if enhanced scenes lacked spatial data
+            if len(choreography_scenes) > 1 and all(s.canvas_x == 0 for s in choreography_scenes):
+                choreography_scenes = _assign_sequential_coordinates(choreography_scenes)
+        except Exception as e:
+            logger.error(f"Scene generation failed: {e}")
+            raise
 
         choreography_scenes.sort(key=lambda s: s.scene_id)
         props = RenderProps(scenes=choreography_scenes)

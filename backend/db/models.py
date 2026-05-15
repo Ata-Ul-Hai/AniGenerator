@@ -73,7 +73,9 @@ class Scene(Base):
     audio_path: Mapped[str] = mapped_column(String(512), default="")
     svg_path: Mapped[str] = mapped_column(String(512), default="")    # illustration:// or inline://
     audio_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    draw_start_ms: Mapped[int] = mapped_column(Integer, default=0)
     draw_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    hold_ms: Mapped[int] = mapped_column(Integer, default=0)
 
     # Infinite-canvas spatial coordinates
     canvas_x: Mapped[int] = mapped_column(Integer, default=0)
@@ -82,6 +84,10 @@ class Scene(Base):
     canvas_height: Mapped[int] = mapped_column(Integer, default=1080)
     layout_direction: Mapped[str] = mapped_column(String(32), default="right")
     kinetic_words_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    # Secondary SVG for dual-illustration layout
+    svg_content_secondary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    svg_path_secondary: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     job: Mapped[Job] = relationship("Job", back_populates="scenes")
 
