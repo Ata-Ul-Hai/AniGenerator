@@ -39,11 +39,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # Pre-download MiniLM model at build time — baked into image layer.
 # unDraw SVGs and index.json are NOT baked — fetched from GCS at startup.
-RUN python -c "
-from sentence_transformers import SentenceTransformer
-SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-print('MiniLM model cached.')
-"
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); print('MiniLM model cached.')"
 
 COPY backend /app/backend
 COPY renderer /app/renderer
