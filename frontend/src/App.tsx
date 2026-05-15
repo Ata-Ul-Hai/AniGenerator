@@ -9,7 +9,7 @@ import Dashboard from "./components/Dashboard.tsx"; // Will refactor later
 import AdminPanel from "./pages/AdminPanel"; // Will create next
 
 function App() {
-  const { user, loading, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   // NOTE: Do NOT block rendering here on `loading`.
