@@ -51,21 +51,37 @@ def upgrade() -> None:
         if 'ix_users_username' not in existing_indexes:
             op.create_index(op.f('ix_users_username'), 'users', ['username'], unique=True)
 
-    # 2. Update jobs table (Batch mode for SQLite)
-    with op.batch_alter_table('jobs', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('user_id', sa.Integer(), nullable=True))
-        batch_op.create_foreign_key('fk_jobs_user_id', 'users', ['user_id'], ['id'], ondelete='CASCADE')
-        batch_op.drop_index('ix_jobs_created_at')
-        batch_op.drop_index('ix_jobs_status')
+    # Pre-inspect columns for idempotency
+    jobs_columns = [col['name'] for col in inspector.get_columns('jobs')]
+    scenes_columns = [col['name'] for col in inspector.get_columns('scenes')]
+    jobs_indexes = [idx['name'] for idx in inspector.get_indexes('jobs')]
+    jobs_constraints = [fk['name'] for fk in inspector.get_foreign_keys('jobs')]
 
-    # 3. Update scenes table — add only the NEW columns not in 2c1ca0370dce
+    # 2. Update jobs table — idempotent
+    with op.batch_alter_table('jobs', schema=None) as batch_op:
+        if 'user_id' not in jobs_columns:
+            batch_op.add_column(sa.Column('user_id', sa.Integer(), nullable=True))
+        if 'fk_jobs_user_id' not in jobs_constraints:
+            batch_op.create_foreign_key('fk_jobs_user_id', 'users', ['user_id'], ['id'], ondelete='CASCADE')
+        if 'ix_jobs_created_at' in jobs_indexes:
+            batch_op.drop_index('ix_jobs_created_at')
+        if 'ix_jobs_status' in jobs_indexes:
+            batch_op.drop_index('ix_jobs_status')
+
+    # 3. Update scenes table — add only the NEW columns not in 2c1ca0370dce, idempotent
     with op.batch_alter_table('scenes', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('on_screen_text', sa.Text(), nullable=False, server_default=''))
-        batch_op.add_column(sa.Column('svg_path', sa.String(length=512), nullable=False, server_default=''))
-        batch_op.add_column(sa.Column('draw_start_ms', sa.Integer(), nullable=False, server_default='0'))
-        batch_op.add_column(sa.Column('hold_ms', sa.Integer(), nullable=False, server_default='0'))
-        batch_op.add_column(sa.Column('svg_content_secondary', sa.Text(), nullable=True))
-        batch_op.add_column(sa.Column('svg_path_secondary', sa.String(length=512), nullable=True))
+        if 'on_screen_text' not in scenes_columns:
+            batch_op.add_column(sa.Column('on_screen_text', sa.Text(), nullable=False, server_default=''))
+        if 'svg_path' not in scenes_columns:
+            batch_op.add_column(sa.Column('svg_path', sa.String(length=512), nullable=False, server_default=''))
+        if 'draw_start_ms' not in scenes_columns:
+            batch_op.add_column(sa.Column('draw_start_ms', sa.Integer(), nullable=False, server_default='0'))
+        if 'hold_ms' not in scenes_columns:
+            batch_op.add_column(sa.Column('hold_ms', sa.Integer(), nullable=False, server_default='0'))
+        if 'svg_content_secondary' not in scenes_columns:
+            batch_op.add_column(sa.Column('svg_content_secondary', sa.Text(), nullable=True))
+        if 'svg_path_secondary' not in scenes_columns:
+            batch_op.add_column(sa.Column('svg_path_secondary', sa.String(length=512), nullable=True))
         if 'ix_scenes_job_id' in scenes_indexes:
             batch_op.drop_index('ix_scenes_job_id')
         if 'ix_scenes_job_scene' in scenes_indexes:
