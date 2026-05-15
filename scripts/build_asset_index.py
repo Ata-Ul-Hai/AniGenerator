@@ -74,7 +74,7 @@ for svg_file in svg_files:
     descriptors.append(descriptor)
     entries.append({
         "id":   svg_file.stem,
-        "path": str(svg_file),
+        "path": svg_file.name,   # filename only — matches /app/assets/undraw/<name>.svg at runtime
         "text": descriptor,
     })
 

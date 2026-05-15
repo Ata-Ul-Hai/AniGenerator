@@ -439,7 +439,14 @@ class AssetDiscoveryAgent:
             candidates: list[IllustrationCandidate] = []
             for match in matches:
                 try:
-                    svg_content = open(match["path"]).read()
+                    from pathlib import Path as _Path
+                    from backend.core.config import get_settings as _get_settings
+                    _undraw_dir = _Path(_get_settings().asset_undraw_dir)
+                    _svg_file = _undraw_dir / _Path(match["path"]).name
+                    if not _svg_file.exists():
+                        # Fallback: try the path as-is (legacy absolute/relative path in index)
+                        _svg_file = _Path(match["path"])
+                    svg_content = _svg_file.read_text(encoding="utf-8")
                     candidates.append(IllustrationCandidate(
                         url=match["path"],
                         title=match["text"],
