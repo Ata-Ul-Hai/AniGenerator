@@ -16,7 +16,7 @@ def test_pipeline():
     try:
         # 1. Generate Scenes (LLM)
         print("\n[1/3] Generating scenes with Gemini...")
-        scenes = generate_scenes(test_text, max_scenes=1)
+        scenes = generate_scenes(test_text, target_count=1)
         for s in scenes:
             print(f"  Scene {s.scene_id}:")
             print(f"    Narration: {s.narration}")

@@ -9,16 +9,12 @@ import Dashboard from "./components/Dashboard.tsx"; // Will refactor later
 import AdminPanel from "./pages/AdminPanel"; // Will create next
 
 function App() {
-  const { user, loading, logout } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-white"></div>
-      </div>
-    );
-  }
+  // NOTE: Do NOT block rendering here on `loading`.
+  // The landing page is public and must render immediately.
+  // ProtectedRoute handles the loading state for auth-gated pages.
 
   return (
     <div className="dark min-h-screen bg-black">

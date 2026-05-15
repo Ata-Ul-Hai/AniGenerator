@@ -13,18 +13,29 @@ can use existing hardcoded templates as a safety net.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
+# Local disk cache for successful Iconify fetches (avoids repeat network calls)
+_ICONIFY_CACHE_DIR = Path(os.environ.get("ASSET_CACHE_DIR", "/tmp/iconify_cache"))
+
 # ---------------------------------------------------------------------------
 # Preferred icon set prefixes (tried in order for search result selection)
 # ---------------------------------------------------------------------------
-_PREFERRED_PREFIXES = ("tabler", "lucide", "carbon")
+_PREFERRED_PREFIXES = ("tabler", "lucide", "carbon", "material-symbols", "ph", "mdi")
+
+# Icon set prefixes that contain brand logos, emoji, or game art — always skip
+_EXCLUDED_PREFIXES = frozenset((
+    "simple-icons", "logos", "game-icons", "circle-flags", "flag",
+    "twemoji", "noto", "openmoji", "emojione", "fxemoji", "fa-brands",
+))
 
 # ---------------------------------------------------------------------------
 # Abstract-word fallback map — for terms the LLM produces that have no
@@ -70,6 +81,78 @@ _ABSTRACT_MAP: dict[str, str] = {
     "milestone": "flag",
     "insight": "lightbulb",
     "outcome": "check-circle",
+    # Tech / software
+    "container": "package",
+    "containers": "package",
+    "docker": "package",
+    "image": "file-code",
+    "images": "file-code",
+    "volume": "database",
+    "volumes": "database",
+    "layer": "layers",
+    "layers": "layers",
+    "machine": "laptop",
+    "machines": "server",
+    "process": "cpu",
+    "processes": "cpu",
+    "portable": "laptop",
+    "portability": "laptop",
+    "isolation": "lock",
+    "isolated": "lock",
+    "isolate": "lock",
+    "blueprint": "file-code",
+    "blueprints": "file-code",
+    "shipping": "package",
+    "ship": "rocket",
+    "lightweight": "feather",
+    "application": "layout",
+    "app": "layout",
+    "service": "server",
+    "services": "server",
+    "data": "database",
+    "storage": "hard-drive",
+    "security": "shield",
+    "performance": "activity",
+    "scaling": "trending-up",
+    "dependency": "link",
+    "dependencies": "link",
+    "configuration": "settings",
+    "runtime": "play-circle",
+    "cluster": "network",
+    "orchestration": "git-branch",
+    "microservice": "plug",
+    "microservices": "plug",
+    "registry": "archive",
+    "version": "tag",
+    "versioning": "tag",
+    "rollback": "rotate-ccw",
+    "backup": "save",
+    "replication": "copy",
+    "proxy": "shield",
+    "authentication": "key",
+    "encryption": "lock",
+    "build": "tool",
+    "builds": "tool",
+    "test": "check-square",
+    "testing": "check-square",
+    "problem": "alert-circle",
+    "solution": "check-circle",
+    "environment": "globe",
+    "environments": "globe",
+    "resource": "box",
+    "resources": "box",
+    "deploy": "rocket",
+    "deployment": "rocket",
+    "package": "package",
+    "packages": "package",
+    "server": "server",
+    "servers": "server",
+    "cloud": "cloud",
+    "network": "network",
+    "api": "plug",
+    "code": "code",
+    "developer": "code",
+    "system": "cpu",
 }
 
 # Words to strip when extracting the core keyword from a metaphor hint
@@ -79,7 +162,8 @@ _FILLER_WORDS = frozenset({
     "visual", "visually", "metaphor", "of", "for", "with", "as", "in",
     "on", "at", "by", "to", "from", "is", "are", "concept", "concepts", "idea", "ideas",
     "notion", "notions", "illustration", "image", "icon", "symbol", "diagram",
-    "showing", "showing", "demonstrates", "demonstrated",
+    "showing", "showing", "demonstrates", "demonstrated", "scene", "scenes",
+    "step", "steps", "internal", "mechanism", "mechanisms",
 })
 
 
@@ -111,14 +195,39 @@ def keyword_from_hint(metaphor_hint: str) -> str:
     return " ".join(words[:2]) if len(words) >= 2 else words[0]
 
 
-def fetch_icon_svg(keyword: str, base_url: str = "https://api.iconify.design") -> Optional[str]:
-    """Search Iconify for keyword and return a raw SVG string.
+def fetch_icon_svg(
+    keyword: str,
+    base_url: str = "https://api.iconify.design",
+    exclude_names: set[str] | None = None,
+) -> Optional[tuple[str, str]]:
+    """Search Iconify for keyword and return (icon_name, raw_svg).
 
     Returns None on any failure (network error, timeout, no results, bad SVG).
-    Callers should fall back to hardcoded templates when None is returned.
+    Successful fetches are cached to disk to avoid repeat network calls.
+    Pass exclude_names to skip already-used icon identifiers (e.g. "tabler:container").
     """
     if not keyword or not keyword.strip():
         return None
+
+    excluded = exclude_names or set()
+    cache_key = re.sub(r"[^\w-]", "_", keyword.strip().lower())
+    cache_file = _ICONIFY_CACHE_DIR / f"{cache_key}.svg"
+    name_file = _ICONIFY_CACHE_DIR / f"{cache_key}.name"
+
+    # Check disk cache (skip if cached icon is excluded or from a blocked prefix)
+    if cache_file.exists():
+        cached_name = name_file.read_text(encoding="utf-8").strip() if name_file.exists() else ""
+        if cached_name:
+            cached_prefix = cached_name.split(":")[0] if ":" in cached_name else ""
+            if cached_name not in excluded and cached_prefix not in _EXCLUDED_PREFIXES:
+                logger.debug("icon_fetcher: cache hit for '%s'", keyword)
+                return (cached_name, cache_file.read_text(encoding="utf-8"))
+            logger.debug("icon_fetcher: cache hit for '%s' blocked (%s), re-fetching", keyword, cached_name)
+        elif not excluded:
+            # Old cache without .name file — safe to use when dedup is not active
+            logger.debug("icon_fetcher: cache hit (legacy) for '%s'", keyword)
+            return (keyword, cache_file.read_text(encoding="utf-8"))
+        # Old cache + active exclusions/blocked prefix: fall through to network fetch
 
     prefixes = ",".join(_PREFERRED_PREFIXES)
     search_url = f"{base_url}/search"
@@ -140,19 +249,27 @@ def fetch_icon_svg(keyword: str, base_url: str = "https://api.iconify.design") -
         logger.debug("icon_fetcher: no results for keyword '%s'", keyword)
         return None
 
-    # Pick the first result that matches a preferred prefix (in priority order)
+    # Pick the first non-excluded result matching a preferred prefix (in priority order)
     chosen: str | None = None
     for prefix in _PREFERRED_PREFIXES:
         for icon_name in icons:
-            if icon_name.startswith(f"{prefix}:"):
+            if icon_name.startswith(f"{prefix}:") and icon_name not in excluded:
                 chosen = icon_name
                 break
         if chosen:
             break
 
-    # Fallback to first result if no preferred prefix matched
+    # Fallback to first non-excluded result — still block brand/emoji sets
     if not chosen:
-        chosen = icons[0]
+        for icon_name in icons:
+            prefix_part = icon_name.split(":")[0] if ":" in icon_name else ""
+            if icon_name not in excluded and prefix_part not in _EXCLUDED_PREFIXES:
+                chosen = icon_name
+                break
+
+    if not chosen:
+        logger.debug("icon_fetcher: all results excluded for keyword '%s'", keyword)
+        return None
 
     # Fetch the SVG file
     prefix_part, name_part = chosen.split(":", 1)
@@ -171,7 +288,16 @@ def fetch_icon_svg(keyword: str, base_url: str = "https://api.iconify.design") -
         return None
 
     logger.info("icon_fetcher: fetched %s for keyword '%s'", chosen, keyword)
-    return raw_svg
+
+    # Write to disk cache for future requests
+    try:
+        _ICONIFY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(raw_svg, encoding="utf-8")
+        name_file.write_text(chosen, encoding="utf-8")
+    except Exception as cache_exc:
+        logger.debug("icon_fetcher: cache write failed: %s", cache_exc)
+
+    return (chosen, raw_svg)
 
 
 def normalize_svg(raw_svg: str) -> str:
@@ -263,7 +389,7 @@ def normalize_svg(raw_svg: str) -> str:
         f"{{{svg_ns}}}ellipse",
         f"{{{svg_ns}}}g",
     }
-    _REMOVE_ATTRS = {"fill-rule", "clip-rule", "clip-path", "mask", "filter", "class", "id"}
+    _REMOVE_ATTRS = {"fill-rule", "clip-rule", "clip-path", "mask", "filter", "class", "id", "style"}
 
     for elem in root.iter():
         if elem.tag not in _SHAPE_TAGS:
@@ -278,7 +404,7 @@ def normalize_svg(raw_svg: str) -> str:
         if elem.tag != f"{{{svg_ns}}}g":
             elem.set("fill", "none")
             elem.set("stroke", "#1a1a1a")
-            elem.set("stroke-width", "3")
+            elem.set("stroke-width", "1.5")
             elem.set("stroke-linecap", "round")
             elem.set("stroke-linejoin", "round")
 

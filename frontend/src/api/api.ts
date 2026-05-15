@@ -1,15 +1,28 @@
 import axios from 'axios';
 
-// When deployed to Vercel, this /api path is proxied to Google Cloud
-// Locally, it talks to localhost:8000 via the Vite proxy (or direct if configured)
-const API_BASE_URL = '/api'; 
-
 const api = axios.create({
-  baseURL: `${API_BASE_URL}/v1`,
+  baseURL: '/api/v1',
   withCredentials: true, // Crucial for HttpOnly Cookies
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Global 401 interceptor: redirect to /login on session expiry
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Don't redirect if this was a background auth check or we're already on login/signup
+      const isAuthCheck = error.config?.url?.includes('/auth/me');
+      const isPublicPage = ['/login', '/signup', '/'].includes(window.location.pathname);
+      
+      if (!isAuthCheck && !isPublicPage) {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;

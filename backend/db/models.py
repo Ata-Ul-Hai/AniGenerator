@@ -48,7 +48,6 @@ class Job(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="queued")   # queued|running|completed|failed
     input_filename: Mapped[str] = mapped_column(String(255), default="")
-    max_scenes: Mapped[int] = mapped_column(Integer, default=15)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
@@ -60,7 +59,7 @@ class Job(Base):
 
 
 class Scene(Base):
-    """One scene within a job — narration, SVG, audio timing."""
+    """One scene within a job — narration, SVG, audio timing, and infinite-canvas spatial data."""
 
     __tablename__ = "scenes"
 
@@ -68,11 +67,27 @@ class Scene(Base):
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     scene_index: Mapped[int] = mapped_column(Integer)                    # 1-based
     narration: Mapped[str] = mapped_column(Text, default="")
+    on_screen_text: Mapped[str] = mapped_column(Text, default="")
     svg_markup: Mapped[str] = mapped_column(Text, default="")
     metaphor_hint: Mapped[str] = mapped_column(Text, default="")
     audio_path: Mapped[str] = mapped_column(String(512), default="")
+    svg_path: Mapped[str] = mapped_column(String(512), default="")    # illustration:// or inline://
     audio_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    draw_start_ms: Mapped[int] = mapped_column(Integer, default=0)
     draw_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    hold_ms: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Infinite-canvas spatial coordinates
+    canvas_x: Mapped[int] = mapped_column(Integer, default=0)
+    canvas_y: Mapped[int] = mapped_column(Integer, default=0)
+    canvas_width: Mapped[int] = mapped_column(Integer, default=1920)
+    canvas_height: Mapped[int] = mapped_column(Integer, default=1080)
+    layout_direction: Mapped[str] = mapped_column(String(32), default="right")
+    kinetic_words_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    # Secondary SVG for dual-illustration layout
+    svg_content_secondary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    svg_path_secondary: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     job: Mapped[Job] = relationship("Job", back_populates="scenes")
 

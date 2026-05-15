@@ -37,9 +37,15 @@ RUN apt-get update \
 COPY backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Pre-download MiniLM model at build time — baked into image layer.
+# unDraw SVGs and index.json are NOT baked — fetched from GCS at startup.
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2'); print('MiniLM model cached.')"
+
 COPY backend /app/backend
 COPY renderer /app/renderer
-COPY assets /app/assets
+# assets/undraw/ and assets/index.json are gitignored — fetched from GCS at startup.
+# Only create the directory here so the chown below works.
+RUN mkdir -p /app/assets/undraw
 COPY scripts /app/scripts
 
 # Use npm ci for deterministic, reproducible installs from lockfile
@@ -57,4 +63,4 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # Use the PORT environment variable if provided (default to 8080 for Cloud Run)
 # Run migrations first — fail loudly in production if migration fails
-CMD ["sh", "-c", "python /app/scripts/migrate_db.py && uvicorn backend.main:app --app-dir /app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "python /app/scripts/migrate_db.py && python /app/scripts/fetch_assets.py && uvicorn backend.main:app --app-dir /app --host 0.0.0.0 --port ${PORT:-8080}"]

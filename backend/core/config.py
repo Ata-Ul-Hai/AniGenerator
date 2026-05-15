@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     gcp_project_id: str | None = Field(default=None, alias="GOOGLE_CLOUD_PROJECT")
     gemini_api_key: str = Field(default="", alias="GEMINI_API_KEY")
     svg_assets_dir: str = Field(default="../assets/svgs", alias="SVG_ASSETS_DIR")
-    max_scenes: int = Field(default=8, alias="MAX_SCENES")
     max_input_chars: int = Field(default=15_000, alias="MAX_INPUT_CHARS")
     max_upload_mb: int = Field(default=20, alias="MAX_UPLOAD_MB")
     run_retention_count: int = Field(default=20, alias="RUN_RETENTION_COUNT")
@@ -42,6 +41,17 @@ class Settings(BaseSettings):
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=1440, alias="ACCESS_TOKEN_EXPIRE_MINUTES") # 24h
     allowed_origins: str = Field(default="*", alias="ALLOWED_ORIGINS")
+
+    # ── SEMANTIC ASSET PIPELINE ──────────────────────────────────────────────
+    use_multi_model_director: bool = Field(default=False, alias="USE_MULTI_MODEL_DIRECTOR")
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
+    cerebras_api_key: str = Field(default="", alias="CEREBRAS_API_KEY")
+    
+    asset_index_path: str = Field(default="assets/index.json", alias="ASSET_INDEX_PATH")
+    asset_undraw_dir: str = Field(default="assets/undraw/svg", alias="ASSET_UNDRAW_DIR")
+    asset_cache_dir: str = Field(default="/tmp/iconify_cache", alias="ASSET_CACHE_DIR")
+    semantic_threshold: float = Field(default=0.30, alias="SEMANTIC_THRESHOLD")
+    gcs_assets_bucket: str = Field(default="gs://my-ani-gen-bucket", alias="GCS_ASSETS_BUCKET")
 
     # ── PRODUCTION ASSETS ────────────────────────────────────────────────────
     gcs_bucket_name: str | None = Field(default=None, alias="GCS_BUCKET_NAME")

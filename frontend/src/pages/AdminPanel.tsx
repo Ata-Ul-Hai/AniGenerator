@@ -67,9 +67,7 @@ const AdminPanel: React.FC = () => {
   const handleToggleAuth = async (userId: number, currentAuth: boolean) => {
     setActionLoading(userId);
     try {
-      await api.post(`/admin/users/${userId}/approve`, null, {
-        params: { authorized: !currentAuth }
-      });
+      await api.put(`/admin/users/${userId}/approve`, { authorized: !currentAuth });
       await fetchData();
     } catch (err) {
       alert('Action failed');
