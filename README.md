@@ -25,6 +25,26 @@ The AniGenerator platform is a highly decoupled, asynchronous pipeline optimized
 
 ---
 
+## 🧠 Key Engineering Decisions
+
+| Decision | Alternatives considered | Why this won |
+|----------|------------------------|--------------|
+| Remotion (React-based rendering) over MoviePy / cloud video APIs | FFmpeg-only compositing, third-party video SaaS | Scenes are React components — SVG animation, timing, and text layout stay in reviewable code; headless Chromium renders deterministically instead of hand-tuned ffmpeg filters |
+| SQL-backed job states + polling over Celery/Redis | Celery + Redis broker, WebSockets for status | One fewer stateful service to run on Cloud Run; SQLAlchemy + Alembic give typed models and migrations; long-polling survives serverless connection limits better than sockets |
+| Gemini 2.5 Flash for storyboarding | Larger/slower models, local LLMs | Structured scene JSON (script + visual targets) at low latency and low cost — storyboarding is a throughput problem, not a reasoning-depth problem |
+| Client-side 20 MB pre-validation before upload | Server-only validation | Oversized files are rejected before they occupy ingress bandwidth; server re-validates anyway (never trust the client) |
+| Guarded boot against weak default secrets | Warn-and-continue logging | The backend refuses to start in production with weak fallback credentials — misconfiguration becomes impossible to ship, not just visible in logs |
+
+## ⚠️ Known Limitations & Trade-offs
+
+- **Renderer is Chromium-bound**: each render needs ~4 vCPU / 8 GiB with concurrency capped at 4 — throughput scales horizontally, not vertically, and cold starts are noticeable.
+- **SQL as the queue**: job state lives in Postgres, not a real message broker — fine for single-user and demo scale, would need BullMQ/SQS-style infrastructure under heavy multi-user load.
+- **gTTS narration is functional, not studio-grade**: zero-cost and fast, but robotic; a premium TTS provider is a drop-in upgrade point.
+- **Long-polling status checks**: fine for individual users, chatty at scale — SSE would cut overhead.
+- **Video quality depends on source document structure**: dense multi-column PDFs storyboard less cleanly than linear text.
+
+---
+
 ## 🚀 Local Development Environment
 
 ### Prerequisites
