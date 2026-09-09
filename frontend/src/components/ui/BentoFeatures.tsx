@@ -1,163 +1,129 @@
 import React from "react";
-import { FileSearch, Wand2, PenTool, Mic2, Check, Sparkles } from "lucide-react";
+import { FileCode, Layers, Activity, Server } from "lucide-react";
 
 export const BentoFeatures: React.FC = () => {
   return (
-    <section id="capabilities" className="py-24 md:py-32 px-4 sm:px-6 relative bg-zinc-50/60 border-t border-zinc-200">
-      <div className="max-w-7xl mx-auto">
+    <section id="capabilities" className="py-24 md:py-32 px-4 sm:px-6 relative bg-white border-t border-zinc-200">
+      <div className="max-w-7xl mx-auto space-y-14">
         {/* Section Header */}
-        <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold uppercase tracking-wider text-orange-700 bg-orange-50 border border-orange-200">
-            <Sparkles size={13} />
-            Studio Core Capabilities
-          </span>
-          <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-zinc-900">
-            Engineered for <span className="text-orange-600">clarity</span>, not just decoration.
+        <div className="max-w-3xl space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-600 inline-block" />
+            <span className="text-[11px] font-mono font-semibold uppercase tracking-widest text-blue-700">
+              Compiler Architecture
+            </span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 leading-tight">
+            How AniGenerator turns dense documentation into moving visual proof
           </h2>
           <p className="text-zinc-600 text-sm md:text-base leading-relaxed">
-            Most video tools simply splice together generic stock clips. AniGenerator builds a custom whiteboard animation from scratch, choreographing stroke vectors to match your document's thesis.
+            Unlike generic AI video wrappers that splice together stock clips, AniGenerator compiles your source text into a structured Remotion composition with mathematically synchronized stroke animations.
           </p>
         </div>
 
-        {/* Bento Grid Layout in Bright Theme */}
+        {/* Asymmetric Technical Grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          {/* Card 1: Semantic Document Parsing (7 cols) */}
-          <div className="md:col-span-7 rounded-2xl border border-zinc-200 bg-white p-7 flex flex-col justify-between group hover:border-zinc-300 transition-all shadow-xs">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 rounded-xl bg-orange-50 border border-orange-200 flex items-center justify-center text-orange-600">
-                  <FileSearch size={20} />
+          {/* Card 1: Document Tree Normalization (7 cols) */}
+          <div className="md:col-span-7 rounded-2xl border border-zinc-200 bg-[#FBFBFD] p-7 flex flex-col justify-between shadow-xs hover:border-zinc-300 transition-all">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-white border border-zinc-200 flex items-center justify-center text-zinc-800 shadow-xs">
+                  <FileCode size={20} className="text-blue-600" />
                 </div>
-                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest px-2.5 py-1 rounded bg-zinc-100 border border-zinc-200 font-semibold">
-                  Stage 01 • Parsing
+                <span className="text-[11px] font-mono text-zinc-500 font-medium">
+                  MIME: application/pdf • markdown
                 </span>
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-2">
-                Hierarchical Document Ingestion
+              <h3 className="text-xl font-bold text-zinc-900">
+                AST-Aware Semantic Normalization
               </h3>
-              <p className="text-zinc-600 text-sm leading-relaxed mb-6">
-                Directly parses complex PDFs, technical specifications, and academic manuscripts up to 20MB. Strips out bibliography noise and extracts semantic milestones.
+              <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed">
+                Raw technical papers contain two-column layout jumps, equation noise, and footnote clutter that break naive LLM summarizers. AniGenerator parses the document into a clean abstract syntax tree, extracts core hypotheses, and strips non-pedagogical artifacts.
               </p>
             </div>
 
-            {/* Visual Micro-Card: Diff of Raw vs Parsed */}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 font-mono text-xs space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-zinc-500 border-b border-zinc-200 pb-2">
-                <span>INGESTION_PIPELINE.PY</span>
-                <span className="text-emerald-700 font-bold flex items-center gap-1">
-                  <Check size={12} /> Normalized
-                </span>
+            {/* Micro-Schema: Normalized Flow */}
+            <div className="mt-6 p-4 rounded-xl bg-white border border-zinc-200 font-mono text-xs space-y-2.5 shadow-xs">
+              <div className="flex items-center justify-between text-[10px] text-zinc-500 border-b border-zinc-100 pb-2">
+                <span>INSPECTOR: DOC_PARSER.RS</span>
+                <span className="text-emerald-700 font-bold">2.4MB / 18 Pages Parsed</span>
               </div>
-              <div className="space-y-1.5 text-[11px]">
-                <div className="flex gap-2 text-zinc-400">
-                  <span className="line-through">§ 12.4 References, footnotes, header metadata</span>
+              <div className="space-y-1 text-[11px]">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span className="line-through">Footnote [14]: Fischer, Lynch, Paterson IEEE 1985</span>
+                  <span className="text-[10px] text-zinc-400">STRIPPED</span>
                 </div>
-                <div className="flex gap-2 text-zinc-800 font-medium">
-                  <span className="text-orange-600 font-bold">→</span>
-                  <span>Core Hypothesis: Distributed consensus requires 2F+1 quorum</span>
-                </div>
-                <div className="flex gap-2 text-zinc-800 font-medium">
-                  <span className="text-orange-600 font-bold">→</span>
-                  <span>Visual Metaphor: Voting ring with heartbeat signals</span>
+                <div className="flex items-center justify-between text-zinc-900 font-medium">
+                  <span className="text-blue-600 font-bold">▶ Section 3.1: Heartbeat Invariants</span>
+                  <span className="text-[10px] font-bold text-blue-700">EXTRACTED (4 Scenes)</span>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Card 2: Gemini 2.5 Flash as Director (5 cols) */}
-          <div className="md:col-span-5 rounded-2xl border border-zinc-200 bg-white p-7 flex flex-col justify-between group hover:border-zinc-300 transition-all shadow-xs">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 rounded-xl bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-600">
-                  <Wand2 size={20} />
+          {/* Card 2: Remotion Vector Physics (5 cols) */}
+          <div className="md:col-span-5 rounded-2xl border border-zinc-200 bg-[#FBFBFD] p-7 flex flex-col justify-between shadow-xs hover:border-zinc-300 transition-all">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-white border border-zinc-200 flex items-center justify-center text-zinc-800 shadow-xs">
+                  <Layers size={20} className="text-orange-600" />
                 </div>
-                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest px-2.5 py-1 rounded bg-zinc-100 border border-zinc-200 font-semibold">
-                  Stage 02 • Directing
+                <span className="text-[11px] font-mono text-zinc-500 font-medium">
+                  SVG Path Tracing
                 </span>
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-2">
-                Multi-Modal Scene Storyboarding
+              <h3 className="text-xl font-bold text-zinc-900">
+                Natural Drawing Velocity Curves
               </h3>
-              <p className="text-zinc-600 text-sm leading-relaxed mb-6">
-                Gemini 2.5 Flash acts as pedagogical director. It generates both natural spoken voiceover scripts and choreographed spatial diagrams.
+              <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed">
+                Rather than static transitions, Remotion calculates dynamic <code className="text-zinc-800 font-mono text-xs bg-zinc-100 px-1 py-0.5 rounded">stroke-dasharray</code> offsets with non-linear easing to replicate the organic deceleration of a dry-erase marker.
               </p>
             </div>
 
-            {/* Visual Micro-Card: Scene Beat Card */}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 font-mono text-xs space-y-2">
-              <div className="flex items-center justify-between text-[10px] text-sky-700 font-semibold">
-                <span>STORYBOARD_DIRECTOR.JSON</span>
-                <span>SCENE 01 / 04</span>
+            {/* Kinetic Path Preview */}
+            <div className="mt-6 p-4 rounded-xl bg-white border border-zinc-200 space-y-2 shadow-xs">
+              <div className="flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                <span>EASING: CUBIC_BEZIER(0.25, 0.1, 0.25, 1.0)</span>
+                <span className="text-orange-600 font-bold">30 FPS</span>
               </div>
-              <div className="bg-white p-2.5 rounded-lg border border-zinc-200 text-[10px] text-zinc-700">
-                <code>{`{"timing": "00:15s", "actor": "LeaderNode", "action": "draw_circle", "label": "Quorum Leader"}`}</code>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Remotion Dynamic Stroke Choreography (5 cols) */}
-          <div className="md:col-span-5 rounded-2xl border border-zinc-200 bg-white p-7 flex flex-col justify-between group hover:border-zinc-300 transition-all shadow-xs">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-                  <PenTool size={20} />
-                </div>
-                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest px-2.5 py-1 rounded bg-zinc-100 border border-zinc-200 font-semibold">
-                  Stage 03 • Vectors
-                </span>
-              </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-2">
-                Dynamic SVG Stroke Physics
-              </h3>
-              <p className="text-zinc-600 text-sm leading-relaxed mb-6">
-                Powered by Remotion in headless Chromium. Computes realistic stroke-dasharray animations with natural hand-drawing velocity curves.
-              </p>
-            </div>
-
-            {/* Visual Micro-Card: Vector Path Preview */}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 space-y-2">
-              <div className="flex items-center justify-between text-[10px] font-mono text-amber-700 font-semibold">
-                <span>STROKE_DASHARRAY</span>
-                <span>VELOCITY: EASE_OUT</span>
-              </div>
-              <div className="h-12 bg-white rounded-lg flex items-center justify-center p-2 border border-zinc-200">
-                <svg className="w-full h-8" viewBox="0 0 200 40">
+              <div className="h-10 bg-zinc-50 rounded-lg flex items-center justify-center px-3 border border-zinc-100">
+                <svg className="w-full h-6" viewBox="0 0 240 24">
                   <path
-                    d="M 10 20 Q 50 5, 100 20 T 190 20"
+                    d="M 5 12 Q 60 2, 120 12 T 235 12"
                     stroke="#EA580C"
                     strokeWidth="2.5"
                     fill="none"
-                    strokeDasharray="4 2"
+                    strokeDasharray="6 3"
                   />
-                  <circle cx="190" cy="20" r="4" fill="#EA580C" />
+                  <circle cx="235" cy="12" r="3.5" fill="#EA580C" />
                 </svg>
               </div>
             </div>
           </div>
 
-          {/* Card 4: Frame-Matched Neural Audio (7 cols) */}
-          <div className="md:col-span-7 rounded-2xl border border-zinc-200 bg-white p-7 flex flex-col justify-between group hover:border-zinc-300 transition-all shadow-xs">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600">
-                  <Mic2 size={20} />
+          {/* Card 3: Syllable Audio Synchronization (5 cols) */}
+          <div className="md:col-span-5 rounded-2xl border border-zinc-200 bg-[#FBFBFD] p-7 flex flex-col justify-between shadow-xs hover:border-zinc-300 transition-all">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-white border border-zinc-200 flex items-center justify-center text-zinc-800 shadow-xs">
+                  <Activity size={20} className="text-emerald-600" />
                 </div>
-                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-widest px-2.5 py-1 rounded bg-zinc-100 border border-zinc-200 font-semibold">
-                  Stage 04 • Audio Sync
+                <span className="text-[11px] font-mono text-zinc-500 font-medium">
+                  ±12ms Alignment
                 </span>
               </div>
-              <h3 className="text-xl font-bold text-zinc-900 mb-2">
-                Sub-Second Voiceover Synchronization
+              <h3 className="text-xl font-bold text-zinc-900">
+                Sub-Second Voiceover Timing
               </h3>
-              <p className="text-zinc-600 text-sm leading-relaxed mb-6">
-                Neural TTS voiceover timing dictates video render keyframes. Pen drawings conclude the exact millisecond narration concludes each idea.
+              <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed">
+                Neural voiceover phoneme durations dictate video render frames. Stroke animations conclude the exact millisecond the corresponding spoken explanation concludes.
               </p>
             </div>
 
-            {/* Visual Micro-Card: Waveform & Timecode */}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 flex items-center justify-between gap-4 font-mono text-xs">
-              <div className="flex items-center gap-1 flex-1 h-8">
-                {[40, 70, 90, 30, 85, 60, 45, 95, 35, 75, 50, 80, 65, 30, 90, 40, 85, 60].map((h, i) => (
+            {/* Audio Waveform Sync Gauge */}
+            <div className="mt-6 p-4 rounded-xl bg-white border border-zinc-200 flex items-center justify-between gap-3 font-mono text-xs shadow-xs">
+              <div className="flex items-center gap-1 flex-1 h-7">
+                {[35, 60, 85, 40, 95, 70, 50, 90, 45, 80, 65, 95, 55, 30, 85, 50, 75].map((h, i) => (
                   <div
                     key={i}
                     className="flex-1 bg-emerald-600/30 rounded-full"
@@ -166,8 +132,44 @@ export const BentoFeatures: React.FC = () => {
                 ))}
               </div>
               <div className="text-right shrink-0">
-                <span className="text-emerald-700 font-bold block text-[11px]">SYNC_ACCURACY: &plusmn;12ms</span>
-                <span className="text-[10px] text-zinc-500">Bitrate: 320kbps MP3</span>
+                <span className="text-emerald-700 font-bold block text-[11px]">TTS_SYNC_LOCK</span>
+                <span className="text-[10px] text-zinc-400">Zero Audio Drift</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: Headless Cloud Run Farm (7 cols) */}
+          <div className="md:col-span-7 rounded-2xl border border-zinc-200 bg-[#FBFBFD] p-7 flex flex-col justify-between shadow-xs hover:border-zinc-300 transition-all">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl bg-white border border-zinc-200 flex items-center justify-center text-zinc-800 shadow-xs">
+                  <Server size={20} className="text-blue-600" />
+                </div>
+                <span className="text-[11px] font-mono text-zinc-500 font-medium">
+                  Headless Chromium + FFmpeg
+                </span>
+              </div>
+              <h3 className="text-xl font-bold text-zinc-900">
+                Deterministic Parallel Rendering
+              </h3>
+              <p className="text-zinc-600 text-xs sm:text-sm leading-relaxed">
+                Compositions are bundled into ephemeral containers on Google Cloud Run. Headless Chromium evaluates React DOM keyframes and pipes pixel streams into FFmpeg without GPU reliance, outputting clean 1080p H.264 MP4s.
+              </p>
+            </div>
+
+            {/* Spec Matrix */}
+            <div className="mt-6 grid grid-cols-3 gap-3 font-mono text-xs">
+              <div className="p-3 rounded-xl bg-white border border-zinc-200 shadow-xs">
+                <span className="text-[10px] text-zinc-400 block">RESOLUTION</span>
+                <strong className="text-zinc-900 text-xs font-bold">1920×1080 (16:9)</strong>
+              </div>
+              <div className="p-3 rounded-xl bg-white border border-zinc-200 shadow-xs">
+                <span className="text-[10px] text-zinc-400 block">CONTAINER</span>
+                <strong className="text-zinc-900 text-xs font-bold">MP4 (H.264 / AAC)</strong>
+              </div>
+              <div className="p-3 rounded-xl bg-white border border-zinc-200 shadow-xs">
+                <span className="text-[10px] text-zinc-400 block">ENCODE SPEED</span>
+                <strong className="text-blue-700 text-xs font-bold">~1.2x Realtime</strong>
               </div>
             </div>
           </div>

@@ -1,99 +1,134 @@
 import React from "react";
-import { Server, FileCode, CheckCircle } from "lucide-react";
+import { FileUp, Cpu, Volume2, Video, ArrowRight, CheckCircle2 } from "lucide-react";
 
 export const ArchitecturePipeline: React.FC = () => {
-  const steps = [
+  const stages = [
     {
-      num: "01",
-      name: "Document Ingestion",
-      tag: "FASTAPI / PYTHON 3.12",
-      desc: "Upload PDFs, DOCX, or TXT (up to 20MB). Normalizes text blocks, strips header artifacts, and chunks logical concepts.",
-      color: "border-orange-200 text-orange-700 bg-orange-50",
+      step: "01",
+      icon: <FileUp size={18} className="text-blue-600" />,
+      title: "Document Ingestion",
+      subhead: "PyMuPDF & AST Parser",
+      input: "Raw PDF / DOCX / Markdown",
+      output: "Normalized Semantic Markdown",
+      description: "Extracts body text while discarding layout headers, page margins, and bibliography noise. Partitions key hypotheses into logical chapters.",
     },
     {
-      num: "02",
-      name: "LLM Storyboarder",
-      tag: "GEMINI 2.5 FLASH",
-      desc: "Prompts multi-modal Gemini to partition the document into pedagogical narrative scenes, spoken script, and vector cues.",
-      color: "border-sky-200 text-sky-700 bg-sky-50",
+      step: "02",
+      icon: <Cpu size={18} className="text-purple-600" />,
+      title: "Pedagogical Director",
+      subhead: "Gemini 2.5 Flash",
+      input: "Normalized Document Chunks",
+      output: "Storyboard JSON (Scenes & Cues)",
+      description: "Structures the narrative arc, generates conversational spoken voiceover text, and plans dynamic spatial vector drawing coordinates.",
     },
     {
-      num: "03",
-      name: "Audio Synthesizer",
-      tag: "NEURAL TTS & TIMECODES",
-      desc: "Asynchronously generates neural voiceover audio files and maps exact millisecond syllable durations for keyframe alignment.",
-      color: "border-amber-200 text-amber-700 bg-amber-50",
+      step: "03",
+      icon: <Volume2 size={18} className="text-emerald-600" />,
+      title: "Speech Synthesis",
+      subhead: "Neural TTS & Phoneme Clocks",
+      input: "Spoken Script Strings",
+      output: "Timestamped Audio MP3s",
+      description: "Generates natural audio voiceover and exports syllable-accurate millisecond markers to dictate visual keyframe completion.",
     },
     {
-      num: "04",
-      name: "Remotion Video Engine",
-      tag: "HEADLESS CHROMIUM & FFMPEG",
-      desc: "Renders dynamically animated SVG stroke paths synced to voiceover, encoding broadcast-grade 1080p MP4 artifacts.",
-      color: "border-emerald-200 text-emerald-700 bg-emerald-50",
+      step: "04",
+      icon: <Video size={18} className="text-orange-600" />,
+      title: "Remotion Composition",
+      subhead: "Headless Chromium + FFmpeg",
+      input: "Vector Cues + Neural Audio",
+      output: "1080p 30fps H.264 MP4",
+      description: "Animates organic SVG stroke trajectories synchronized to narration, rendering broadcast-grade video directly on Cloud Run.",
     },
   ];
 
   return (
-    <section id="pipeline" className="py-24 md:py-32 px-4 sm:px-6 relative border-t border-zinc-200 bg-zinc-50/50">
-      <div className="max-w-7xl mx-auto">
-        <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold uppercase tracking-wider text-emerald-700 bg-emerald-50 border border-emerald-200">
-            <Server size={13} />
-            Cloud Run Architecture
-          </span>
-          <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-zinc-900">
-            The Remotion & Gemini Pipeline
+    <section id="pipeline" className="py-24 md:py-32 px-4 sm:px-6 relative border-t border-zinc-200 bg-[#FBFBFD]">
+      <div className="max-w-7xl mx-auto space-y-14">
+        {/* Section Header */}
+        <div className="max-w-3xl space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-orange-600 inline-block" />
+            <span className="text-[11px] font-mono font-semibold uppercase tracking-widest text-orange-700">
+              Compilation Pipeline
+            </span>
+          </div>
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-zinc-900 leading-tight">
+            Deterministic document-to-video execution
           </h2>
           <p className="text-zinc-600 text-sm md:text-base leading-relaxed">
-            A fully decoupled, asynchronous video generation pipeline engineered for deterministic execution and scale.
+            Every video is compiled through a strict four-stage pipeline designed for repeatability, exact audio synchronization, and zero manual timeline editing.
           </p>
         </div>
 
-        {/* 4-Step Pipeline Flow */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {steps.map((step) => (
+        {/* Horizontal Connected Pipeline Flow */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 relative">
+          {stages.map((stage, idx) => (
             <div
-              key={step.num}
-              className="rounded-2xl border border-zinc-200 bg-white p-6 flex flex-col justify-between relative group hover:border-zinc-300 transition-all shadow-xs"
+              key={stage.step}
+              className="rounded-2xl border border-zinc-200 bg-white p-6 flex flex-col justify-between shadow-xs hover:border-zinc-300 transition-all relative group"
             >
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-2xl font-black font-mono text-zinc-300 group-hover:text-zinc-900 transition-colors">
-                    {step.num}
-                  </span>
-                  <span className={`text-[9px] font-mono font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${step.color}`}>
-                    {step.tag}
-                  </span>
+              <div className="space-y-4">
+                {/* Step Top Bar */}
+                <div className="flex items-center justify-between border-b border-zinc-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-zinc-50 border border-zinc-200 flex items-center justify-center shadow-xs">
+                      {stage.icon}
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono text-zinc-400 font-semibold block">STAGE {stage.step}</span>
+                      <strong className="text-xs font-bold text-zinc-900">{stage.title}</strong>
+                    </div>
+                  </div>
+                  {idx < stages.length - 1 && (
+                    <ArrowRight size={14} className="text-zinc-300 hidden lg:block" />
+                  )}
                 </div>
-                <h3 className="text-base font-bold text-zinc-900 mb-2">{step.name}</h3>
-                <p className="text-xs text-zinc-600 leading-relaxed">{step.desc}</p>
+
+                <p className="text-xs text-zinc-600 leading-relaxed min-h-[50px]">
+                  {stage.description}
+                </p>
+
+                {/* Contract Specs */}
+                <div className="space-y-1.5 pt-2 border-t border-zinc-100 font-mono text-[10px]">
+                  <div className="flex items-center justify-between text-zinc-500">
+                    <span>IN:</span>
+                    <span className="text-zinc-800 font-medium truncate max-w-[170px]">{stage.input}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-zinc-500">
+                    <span>OUT:</span>
+                    <span className="text-blue-700 font-bold truncate max-w-[170px]">{stage.output}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-6 pt-4 border-t border-zinc-100 flex items-center justify-between text-[11px] font-mono text-zinc-500">
-                <span className="flex items-center gap-1 text-emerald-700 font-semibold">
-                  <CheckCircle size={12} /> Ready
+              {/* Status Footer */}
+              <div className="mt-5 pt-3 border-t border-zinc-100 flex items-center justify-between text-[10px] font-mono text-zinc-500">
+                <span className="text-zinc-400">{stage.subhead}</span>
+                <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                  <CheckCircle2 size={11} /> Verified
                 </span>
-                <span>Subprocess Safe</span>
               </div>
             </div>
           ))}
         </div>
 
-        {/* Stack Specs Chip Row */}
-        <div className="mt-12 p-5 rounded-2xl border border-zinc-200 bg-white flex flex-wrap items-center justify-between gap-4 shadow-xs">
+        {/* Pipeline Telemetry Strip */}
+        <div className="rounded-2xl border border-zinc-200 bg-white p-5 flex flex-wrap items-center justify-between gap-4 shadow-xs">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-zinc-100 border border-zinc-200 flex items-center justify-center text-zinc-700">
-              <FileCode size={16} />
-            </div>
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <div>
-              <p className="text-xs font-bold text-zinc-900">Full Stack Specifications</p>
-              <p className="text-[10px] text-zinc-500 font-mono">React 19 • Vite • FastAPI • Alembic • Remotion • FFmpeg</p>
+              <p className="text-xs font-bold text-zinc-900">Cloud Run Processing Cluster</p>
+              <p className="text-[11px] font-mono text-zinc-500">FastAPI • Python 3.12 • Remotion 4.0 • Headless Chromium • FFmpeg</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 text-xs font-mono text-zinc-600">
-            <span className="px-2.5 py-1 rounded-md bg-zinc-50 border border-zinc-200">1080p H.264</span>
-            <span className="px-2.5 py-1 rounded-md bg-zinc-50 border border-zinc-200">Sub-10s TTFB</span>
-            <span className="px-2.5 py-1 rounded-md bg-zinc-50 border border-zinc-200">Cloud SQL</span>
+
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <span className="px-3 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-700">
+              Zero GPU Dependency
+            </span>
+            <span className="px-3 py-1 rounded-lg bg-zinc-50 border border-zinc-200 text-zinc-700">
+              Parallel Render Scaling
+            </span>
           </div>
         </div>
       </div>

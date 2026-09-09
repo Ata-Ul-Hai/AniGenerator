@@ -1,29 +1,32 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #F8FAFC;
-  --color-canvas: #F8FAFC;
-  --color-canvas-subtle: #F1F5F9;
+  --color-background: #FBFBFD;
+  --color-canvas: #FBFBFD;
+  --color-canvas-subtle: #F4F4F7;
   --color-surface: #FFFFFF;
   --color-surface-hover: #F8FAFC;
   --color-surface-card: #FFFFFF;
   --color-border-subtle: #E2E8F0;
   --color-border-hover: #CBD5E1;
 
-  /* Natural Studio Marker Palette (Non-Neon, Non-Shiny) */
+  /* Architectural Drafting & Studio Marker Palette (Non-Neon, Disciplined) */
+  --color-blueprint: #2563EB;
+  --color-blueprint-soft: #EFF6FF;
+  --color-blueprint-border: #BFDBFE;
   --color-marker-amber: #EA580C;
   --color-marker-amber-light: #F97316;
   --color-marker-amber-soft: #FFF7ED;
   --color-marker-cyan: #0284C7;
   --color-marker-mint: #16A34A;
-  --color-marker-ink: #0F172A;
+  --color-marker-ink: #111827;
   --color-marker-muted: #64748B;
 
-  --color-accent-blue: #0284C7;
+  --color-accent-blue: #2563EB;
   --color-accent-purple: #EA580C;
 
-  --shadow-premium-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
-  --shadow-premium-lg: 0 12px 28px -6px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+  --shadow-premium-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.03);
+  --shadow-premium-lg: 0 12px 28px -6px rgba(0, 0, 0, 0.06), 0 8px 10px -6px rgba(0, 0, 0, 0.03);
 
   --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -35,15 +38,21 @@
   }
 
   body {
-    background-color: #F8FAFC;
-    color: #0F172A;
+    background-color: #FBFBFD;
+    color: #111827;
     font-family: var(--font-sans);
-    letter-spacing: -0.015em;
+    letter-spacing: -0.012em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Bright Whiteboard Dot Matrix Pattern */
+  /* Architectural Drafting Grid Patterns */
+  .bg-drafting-grid {
+    background-image: linear-gradient(to right, #F1F5F9 1px, transparent 1px),
+                      linear-gradient(to bottom, #F1F5F9 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
   .bg-dot-grid {
     background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
     background-size: 24px 24px;
@@ -55,7 +64,7 @@
   }
 
   .bg-whiteboard-surface {
-    background-color: #FDFDFD;
+    background-color: #FFFFFF;
     background-image: radial-gradient(#E2E8F0 1px, transparent 1px);
     background-size: 32px 32px;
   }

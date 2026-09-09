@@ -14,10 +14,10 @@ export const StudioNavbar: React.FC<StudioNavbarProps> = ({ onLaunchStudio }) =>
   const [activeSection, setActiveSection] = useState<string>("");
 
   useEffect(() => {
-    const sectionIds = ["capabilities", "pipeline", "comparison"];
+    const sectionIds = ["compiler", "capabilities", "pipeline", "comparison"];
 
     const handleScroll = () => {
-      const scrollPosition = window.scrollY + 120;
+      const scrollPosition = window.scrollY + 140;
 
       for (const id of sectionIds) {
         const element = document.getElementById(id);
@@ -44,9 +44,10 @@ export const StudioNavbar: React.FC<StudioNavbarProps> = ({ onLaunchStudio }) =>
   }, []);
 
   const navItems = [
+    { id: "compiler", label: "Deconstruction Bench", href: "#compiler" },
     { id: "capabilities", label: "Capabilities", href: "#capabilities" },
-    { id: "pipeline", label: "Remotion Pipeline", href: "#pipeline" },
-    { id: "comparison", label: "Before & After", href: "#comparison" },
+    { id: "pipeline", label: "Pipeline", href: "#pipeline" },
+    { id: "comparison", label: "Cognitive Science", href: "#comparison" },
   ];
 
   return (
