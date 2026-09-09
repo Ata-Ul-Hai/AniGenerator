@@ -1,43 +1,94 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0B0B0F;
-  --color-surface: #15151A;
-  --color-accent-blue: #3B82F6;
-  --color-accent-purple: #8B5CF6;
+  --color-background: #F8FAFC;
+  --color-canvas: #F8FAFC;
+  --color-canvas-subtle: #F1F5F9;
+  --color-surface: #FFFFFF;
+  --color-surface-hover: #F8FAFC;
+  --color-surface-card: #FFFFFF;
+  --color-border-subtle: #E2E8F0;
+  --color-border-hover: #CBD5E1;
 
-  --shadow-premium-sm: 0 2px 8px -2px rgba(0,0,0,0.5), 0 1px 4px -1px rgba(0,0,0,0.3);
-  --shadow-premium-lg: 0 20px 40px -12px rgba(0,0,0,0.8);
-  --shadow-glow-purple: 0 0 40px -10px rgba(139, 92, 246, 0.3);
-  --shadow-glow-blue: 0 0 40px -10px rgba(59, 130, 246, 0.3);
+  /* Natural Studio Marker Palette (Non-Neon, Non-Shiny) */
+  --color-marker-amber: #EA580C;
+  --color-marker-amber-light: #F97316;
+  --color-marker-amber-soft: #FFF7ED;
+  --color-marker-cyan: #0284C7;
+  --color-marker-mint: #16A34A;
+  --color-marker-ink: #0F172A;
+  --color-marker-muted: #64748B;
 
-  --font-sans: "Inter", "system-ui", "sans-serif";
+  --color-accent-blue: #0284C7;
+  --color-accent-purple: #EA580C;
+
+  --shadow-premium-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-premium-lg: 0 12px 28px -6px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @layer base {
-  body {
-    @apply bg-background text-zinc-100 antialiased;
-    font-family: var(--font-sans);
-    letter-spacing: -0.01em;
+  * {
+    border-color: #E2E8F0;
   }
 
-  /* Soft Background Noise */
-  body::before {
-    content: "";
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    opacity: 0.03;
-    z-index: 50;
+  body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+    font-family: var(--font-sans);
+    letter-spacing: -0.015em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Bright Whiteboard Dot Matrix Pattern */
+  .bg-dot-grid {
+    background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .bg-dot-grid-dense {
+    background-image: radial-gradient(#CBD5E1 1px, transparent 1px);
+    background-size: 16px 16px;
+  }
+
+  .bg-whiteboard-surface {
+    background-color: #FDFDFD;
+    background-image: radial-gradient(#E2E8F0 1px, transparent 1px);
+    background-size: 32px 32px;
   }
 }
 
 @layer utilities {
-  .text-glow {
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Clean Scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: #F1F5F9;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 9999px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+  }
+
+  .studio-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+  }
+
+  .studio-card:hover {
+    border-color: #CBD5E1;
   }
 }
