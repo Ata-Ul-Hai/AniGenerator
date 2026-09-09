@@ -4,6 +4,7 @@ import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { IconBrandGithub } from "@tabler/icons-react";
 import anigenLogo from "../assets/AnigenLogo.png";
 import { StudioNavbar } from "./layout/StudioNavbar";
+import { CompilerWorkbench } from "./ui/CompilerWorkbench";
 import { BentoFeatures } from "./ui/BentoFeatures";
 import { ComparisonShowcase } from "./ui/ComparisonShowcase";
 import { ArchitecturePipeline } from "./ui/ArchitecturePipeline";
@@ -20,7 +21,7 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
 
       {/* Hero Section */}
       <section className="relative pt-28 pb-16 md:pt-36 md:pb-24 px-4 sm:px-6">
-        <div className="max-w-6xl mx-auto text-center space-y-7">
+        <div className="max-w-7xl mx-auto text-center space-y-7">
           {/* Eyebrow badge */}
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -28,9 +29,9 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
             transition={{ duration: 0.4 }}
             className="flex items-center justify-center"
           >
-            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-mono font-medium text-orange-800 bg-orange-50 border border-orange-200">
-              <span className="w-2 h-2 rounded-full bg-orange-600 inline-block" />
-              <span>AniGenerator Studio • Remotion + Gemini Flash Engine</span>
+            <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-mono font-medium text-zinc-700 bg-zinc-100 border border-zinc-200 shadow-2xs">
+              <span className="w-2 h-2 rounded-full bg-blue-600 inline-block animate-pulse" />
+              <span>Autonomous Document-to-Video Engine • Remotion + Gemini</span>
             </div>
           </motion.div>
 
@@ -41,15 +42,15 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
             transition={{ duration: 0.5, delay: 0.1 }}
             className="space-y-4"
           >
-            <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-zinc-900 leading-[1.1] max-w-4xl mx-auto">
-              Convert dense documents into{" "}
-              <span className="text-orange-600">
+            <h1 className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight text-zinc-900 leading-[1.08] max-w-4xl mx-auto">
+              Compiling technical documents into{" "}
+              <span className="text-blue-600">
                 hand-drawn whiteboard
               </span>{" "}
-              videos.
+              explainers.
             </h1>
-            <p className="max-w-2xl mx-auto text-base sm:text-lg md:text-xl text-zinc-600 font-normal leading-relaxed">
-              No manual timelines, keyframes, or animation software. Drop in any PDF, PRD, or research paper—AniGenerator auto-directs pedagogical scenes, sketches vector diagrams, and records neural voiceovers.
+            <p className="max-w-2xl mx-auto text-base sm:text-lg text-zinc-600 font-normal leading-relaxed">
+              No manual keyframing or animation timelines. AniGenerator parses dense PDFs and RFCs, plans pedagogical spoken narration with Gemini, and choreographs vector sketch paths in Remotion.
             </p>
           </motion.div>
 
@@ -62,7 +63,7 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
           >
             <button
               onClick={onGetStarted}
-              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-sm hover:scale-[1.01] active:scale-[0.99] transition-all"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
             >
               <span>Launch Whiteboard Studio</span>
               <ArrowRight size={17} />
@@ -87,17 +88,27 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
             className="flex flex-wrap items-center justify-center gap-6 pt-2 text-xs text-zinc-500 font-mono"
           >
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 size={13} className="text-orange-600" />
+              <CheckCircle2 size={13} className="text-blue-600" />
               1080p 30fps Remotion MP4
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 size={13} className="text-orange-600" />
+              <CheckCircle2 size={13} className="text-blue-600" />
               Gemini 2.5 Flash Storyboards
             </span>
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 size={13} className="text-orange-600" />
+              <CheckCircle2 size={13} className="text-blue-600" />
               Direct PDF / DOCX Ingestion
             </span>
+          </motion.div>
+
+          {/* Interactive Deconstruction Station */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.35 }}
+            className="mt-14 md:mt-20 text-left"
+          >
+            <CompilerWorkbench />
           </motion.div>
         </div>
       </section>
@@ -128,7 +139,7 @@ const LandingPage: React.FC<Props> = ({ onGetStarted }) => {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
             <button
               onClick={onGetStarted}
-              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs hover:scale-[1.01] active:scale-[0.99] transition-all"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-xs hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer"
             >
               <span>Enter Director Studio</span>
               <ArrowRight size={17} />
